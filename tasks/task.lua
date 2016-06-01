@@ -18,6 +18,9 @@
 --  * generateBatch(inputs, targets, flags, lengths, isTraining)
 --------------------------------------------------------------------------------
 
+require("torch")
+require("string.color")
+
 local Task = torch.class("Task")
 
 function Task:__init(opt)
@@ -47,6 +50,7 @@ function Task:__init(opt)
       self.testIdx = 1
    end
 
+   self:message("Parsed generic task options.")
 end
 
 function Task:initTensors()
@@ -154,7 +158,7 @@ function Task:initTensors()
       end
 
       if not self.fixedLength then                                    -- lengths
-         self.trainLenghtsBatch = torch.LongTensor(bs)
+         self.trainLengthsBatch = torch.LongTensor(bs)
       end
 
       --------------------------------------------------------------------------
@@ -177,6 +181,8 @@ function Task:initTensors()
       end
 
    end
+
+   self:message("Initialized tensors.")
 end
 
 
@@ -188,7 +194,7 @@ function Task:updateBatch(split)
    split = split == nil and "train" or split
    if split == "train" then
       if self.onTheFly then
-         self.generateBatch(
+         self:generateBatch(
             self.trainInputsBatch,
             self.trainTargetsBatch,
             self.trainTargetFlagsBatch,
@@ -198,6 +204,7 @@ function Task:updateBatch(split)
       else
          if self.trainIdx + self.batchSize > self.trainSize then
             self.trainIdx = 1
+            self:message("Restarting training set.")
          end
 
          local i = self.trainIdx
@@ -218,7 +225,7 @@ function Task:updateBatch(split)
 
    elseif split == "test" then
       if self.onTheFly then
-         self.generateBatch(
+         self:generateBatch(
             self.testInputsBatch,
             self.testTargetsBatch,
             self.testTargetFlagsBatch,
@@ -228,6 +235,7 @@ function Task:updateBatch(split)
       else
          if self.testIdx + self.batchSize > self.testSize then
             self.testIdx = 1
+            self:message("Restarting test set.")
          end
 
          local i = self.testIdx
@@ -347,6 +355,82 @@ function Task:cuda()
       end
    end
    self.onCuda = true
+   self:message("Moved to GPU using CUDA.")
+end
+
+function Task:displayCurrentBatch(split, zoom)
+   if not image then
+      require("image")
+   end
+
+   split = split == nil and "train" or split
+   zoom = zoom or 50
+
+   if split == "train" then
+      local seqLength = self.trainMaxLength
+      if not self.fixedLength then
+         seqLength = self.trainLengthsBatch[1]
+      end
+      local rowsNo = self.batchSize * self.inputSize
+
+      self.trainInputsWindow = image.display{
+         image = self.trainInputsBatch
+            :narrow(1, 1, seqLength)
+            :contiguous()
+            :view(seqLength, rowsNo)
+            :transpose(1, 2),
+         zoom = zoom,
+         win = self.trainInputsWindow,
+         legend = "Inputs"
+      }
+
+      self.trainTargetsWindow = image.display{
+         image = self.trainTargetsBatch
+            :narrow(1, 1, seqLength)
+            :contiguous()
+            :view(seqLength, rowsNo)
+            :transpose(1, 2),
+         zoom = zoom,
+         win = self.trainTargetsWindow,
+         legend = "Targets"
+      }
+   elseif split == "test" then
+      local seqLength = self.testMaxLength
+      if not self.fixedLength then
+         seqLength = self.testLengthsBatch[1]
+      end
+      local rowsNo = self.batchSize * self.inputSize
+
+      self.testInputsWindow = image.display{
+         image = self.testInputsBatch
+            :narrow(1, 1, seqLength)
+            :contiguous()
+            :view(seqLength, rowsNo)
+            :transpose(1, 2),
+         zoom = zoom,
+         win = self.testInputsWindow,
+         legend = "Inputs"
+      }
+
+      self.testTargetsWindow = image.display{
+         image = self.testTargetsBatch
+            :narrow(1, 1, seqLength)
+            :contiguous()
+            :view(seqLength, rowsNo)
+            :transpose(1, 2),
+         zoom = zoom,
+         win = self.testTargetsWindow,
+         legend = "Targets"
+      }
+   end
+
+end
+
+function Task:message(m)
+   if self.verbose then
+      print(string.format("[TASK] "):color("green") ..
+               string.format(m):color("blue"))
+   end
 end
 
 return Task
