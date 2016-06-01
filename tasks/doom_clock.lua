@@ -54,11 +54,11 @@ function DoomClock:generateBatch(X, T, F, L, isTraining)
    for i = 1, bs do
       local s = 1
       for j = 1, seqLength do
-         if torch.bernoulli(0.5) then
+         if torch.bernoulli(0.5) < 0.5 then
             X[j][i][1] = self.positive
          else
             X[j][i][2] = self.positive
-            s = 2 - s
+            s = 3 - s
          end
          T[j][i][s] = self.positive
       end
