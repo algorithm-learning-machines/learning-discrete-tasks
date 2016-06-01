@@ -222,6 +222,10 @@ function Task:updateBatch(split)
          self.trainIdx = self.trainIdx + self.batchSize
       end
 
+      return self.trainInputsBatch,
+             self.trainTargetsBatch,
+             self.trainTargetFlagsBatch,
+             self.trainLengthsBatch
 
    elseif split == "test" then
       if self.onTheFly then
@@ -252,6 +256,12 @@ function Task:updateBatch(split)
 
          self.testIdx = self.testIdx + self.batchSize
       end
+
+      return self.testInputsBatch,
+             self.testTargetsBatch,
+             self.testTargetFlagsBatch,
+             self.testLengthsBatch
+
    else
       assert(false, "unknown split: " .. split)
    end
@@ -303,6 +313,11 @@ function Task:getOutputSize()
    end
    return self.outputSize
 end
+
+function Task:getOutputsNo()
+   return 1
+end
+
 
 function Task:hasTargetAtEachStep()
    return self.targetAtEachStep or false
