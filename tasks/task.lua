@@ -476,11 +476,11 @@ function Task:cuda()
          self.testInputs[k] = self.testInputs[k]:cuda()
       end
       for k,_ in pairs(self.outputsInfo) do
-         self.trainTargets = self.trainTargets:cuda()
-         self.testTargets = self.testTargets:cuda()
+         self.trainTargets[k] = self.trainTargets[k]:cuda()
+         self.testTargets[k] = self.testTargets[k]:cuda()
          if not (self.targetAtTheEnd or self.targetAtEachStep) then
-            self.trainTargetFlags = self.trainTargetFlags:cuda()
-            self.testTargetFlags = self.testTargetFlags:cuda()
+            self.trainTargetFlags[k] = self.trainTargetFlags[k]:cuda()
+            self.testTargetFlags[k] = self.testTargetFlags[k]:cuda()
          end
       end
 
@@ -561,6 +561,7 @@ function Task:displayCurrentBatch(split, zoom)
    }
 
    local oSize = self:__getTotalOutputSize()
+   if self.targetAtTheEnd then seqLength = 1 end
    local outputVals = torch.zeros(3, bs * oSize, seqLength)
 
    start = 1
