@@ -94,19 +94,25 @@ function Task:__initTensors()
       self.testTargetFlags = {}
 
       for k, v in pairs(self.outputsInfo) do
-         local outs
          if v.type == "regression" or v.type == "binary" then
-            outs = v.size
+            local outs = v.size
+            if self.targetAtTheEnd then                        -- vector targets
+               self.trainTargets[k] = torch.Tensor(1, trs, outs)
+               self.testTargets[k] = torch.Tensor(1, tss, outs)
+            else
+               self.trainTargets[k] = torch.Tensor(trl, trs, outs)
+               self.testTargets[k] = torch.Tensor(tsl, tss, outs)
+            end
          elseif v.type == "one-hot" then
-            outs = 1
-         end
-
-         if self.targetAtTheEnd then                                  -- targets
-            self.trainTargets[k] = torch.Tensor(1, trs, outs)
-            self.testTargets[k] = torch.Tensor(1, tss, outs)
+            if self.targetAtTheEnd then                         -- class targets
+               self.trainTargets[k] = torch.Tensor(1, trs)
+               self.testTargets[k] = torch.Tensor(1, tss)
+            else
+               self.trainTargets[k] = torch.Tensor(trl, trs)
+               self.testTargets[k] = torch.Tensor(tsl, tss)
+            end
          else
-            self.trainTargets[k] = torch.Tensor(trl, trs, outs)
-            self.testTargets[k] = torch.Tensor(tsl, tss, outs)
+            assert(false, "Unknown output type")
          end
 
          if not (self.targetAtTheEnd or self.targetAtEachStep) then     -- flags
@@ -174,14 +180,28 @@ function Task:__initTensors()
       end
 
       for k, v in pairs(self.outputsInfo) do
-         if self.targetAtTheEnd then                                  -- targets
-            self.trainTargetsBatch[k] = torch.Tensor(1, bs, v.size)
-            self.testTargetsBatch[k] = torch.Tensor(1, bs, v.size)
+         if v.type == "regression" or v.type == "binary" then
+            local outs = v.size
+            if self.targetAtTheEnd then                        -- vector targets
+               self.trainTargetsBatch[k] = torch.Tensor(1, bs, outs)
+               self.testTargetsBatch[k] = torch.Tensor(1, bs, outs)
+            else
+               self.trainTargetsBatch[k] = torch.Tensor(trl, bs, outs)
+               self.testTargetsBatch[k] = torch.Tensor(tsl, bs, outs)
+            end
+         elseif v.type == "one-hot" then
+            if self.targetAtTheEnd then                         -- class targets
+               self.trainTargetsBatch[k] = torch.Tensor(1, bs)
+               self.testTargetsBatch[k] = torch.Tensor(1, bs)
+            else
+               self.trainTargetsBatch[k] = torch.Tensor(trl, bs)
+               self.testTargetsBatch[k] = torch.Tensor(tsl, bs)
+            end
          else
-            self.trainTargetsBatch[k] = torch.Tensor(trl, bs, v.size)
-            self.testTargetsBatch[k] = torch.Tensor(tsl, bs, v.size)
+            assert(false, "Unknown output type")
          end
-         if not (self.targetAtTheEnd or self.targetAtEachStep) then     -- flags
+
+        if not (self.targetAtTheEnd or self.targetAtEachStep) then     -- flags
             self.trainTargetFlagsBatch[k] = torch.ByteTensor(trl, bs)
             self.testTargetFlagsBatch[k] = torch.ByteTensor(tsl, bs)
          end
@@ -280,7 +300,7 @@ function Task:updateBatch(split)
             self.testInputsBatch[k] = self.testInputs[k]:narrow(2, i, bs)
          end
          for k, _ in pairs(self.outputsInfo) do
-            self.testTargetsBatch = self.testTargets[k]:narrow(2, i, bs)
+            self.testTargetsBatch[k] = self.testTargets[k]:narrow(2, i, bs)
             if not (self.targetAtEachStep or self.targetAtTheEnd) then
                self.testTargetFlagsBatch[k] =
                   self.testTargetFlags[k]:narrow(2, i, bs)
@@ -493,6 +513,8 @@ function Task:displayCurrentBatch(split, zoom)
    split = split == nil and "train" or split
    zoom = zoom or 50
 
+   local name = self.name or "Task"
+
    local bs = self.batchSize
    local seqLength, inputBatch, targetBatch
 
@@ -535,7 +557,7 @@ function Task:displayCurrentBatch(split, zoom)
       image = inputVals,
       zoom = zoom,
       win = self.trainInputsWindow,
-      legend = "Inputs"
+      legend = name .. " - Inputs"
    }
 
    local oSize = self:__getTotalOutputSize()
@@ -544,11 +566,16 @@ function Task:displayCurrentBatch(split, zoom)
    start = 1
    for i = 1, bs do
       for k, v in pairs(self.outputsInfo) do
-         outputVals[{1+(i%2), {start, start+v.size-1},{}}]:copy(
-            targetBatch[k]:select(2,i):narrow(1,1,seqLength):t()
-                                                      )
+         if v.type ~= "one-hot" then
+            outputVals[{1+(i%2), {start, start+v.size-1},{}}]
+               :copy(targetBatch[k]:select(2,i):narrow(1,1,seqLength):t())
+            start = start + v.size
+         else
+            outputVals[{1+(i%2), {start},{}}]
+               :copy(targetBatch[k]:select(2,i):narrow(1,1,seqLength))
+            start = start + 1
+         end
 
-         start = start + v.size
       end
    end
 
@@ -560,7 +587,7 @@ function Task:displayCurrentBatch(split, zoom)
       image = outputVals,
       zoom = zoom,
       win = self.trainTargetsWindow,
-      legend = "Targets"
+      legend = name .. " - Targets"
    }
 end
 
