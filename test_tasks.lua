@@ -14,8 +14,10 @@ require("criterions.generic_criterion")
 require("tasks.copy_first")
 require("tasks.copy")
 require("tasks.doom_clock")
+require("tasks.indexing")
+require("tasks.get_next")
 
-local tasks = {DoomClock, Copy, CopyFirst}
+local tasks = {GetNext, Indexing, DoomClock, Copy, CopyFirst}
 
 --------------------------------------------------------------------------------
 -- Change options here to test stuff.
@@ -52,31 +54,60 @@ for _, T in pairs(tasks) do                                    -- take each task
 
    while not t:isEpochOver() or (opt.onTheFly and i < 100) do
       X, T, F, L = t:updateBatch()
-      for t = 1, L[1] do                              -- go through the sequence
+      local l = L[1]                 -- whole batch has the same sequence length
+      for s = 1, l do                                 -- go through the sequence
          local Xt, Tt = {}, {}
-         for k,v in pairs(X) do Xt[k] = v[t] end
-         for k,v in pairs(T) do Tt[k] = v[t] end
+         for k,v in pairs(X) do Xt[k] = v[s] end
          local Yt = m:forward(Xt)
-         local loss = c:forward(Yt, Tt)
-         local dYt = c:backward(Yt, Tt)
-         m:backward(Xt, dYt)
-      end
+
+         if t:hasTargetAtEachStep() then
+            for k,v in pairs(T) do Tt[k] = v[s] end
+            local loss = c:forward(Yt, Tt)
+            local dYt = c:backward(Yt, Tt)
+            m:backward(Xt, dYt)
+         end
+
+         if t:hasTargetAtTheEnd() and s == l then
+            for k,v in pairs(T) do Tt[k] = v[1] end
+            local loss = c:forward(Yt, Tt)
+            local dYt = c:backward(Yt, Tt)
+            m:backward(Xt, dYt)
+         end
+       end
+
       t:displayCurrentBatch()
       sys.sleep(0.02)
       i = i + 1
    end
 
+   require("cutorch")
+   require("cunn")
+   m:cuda()
+   t:cuda()
+   c:cuda()
+
    t:resetIndex("test")
    while not t:isEpochOver("test") or (opt.onTheFly and i > 0) do
       X, T, F, L = t:updateBatch("test")
-      for t = 1, L[1] do                              -- go through the sequence
+      local l = L[1]
+      for s = 1, l do                                 -- go through the sequence
          local Xt, Tt = {}, {}
-         for k,v in pairs(X) do Xt[k] = v[t] end
-         for k,v in pairs(T) do Tt[k] = v[t] end
+         for k,v in pairs(X) do Xt[k] = v[s] end
          local Yt = m:forward(Xt)
-         local loss = c:forward(Yt, Tt)
-         local dYt = c:backward(Yt, Tt)
-         m:backward(Xt, dYt)
+
+         if t:hasTargetAtEachStep() then
+            for k,v in pairs(T) do Tt[k] = v[s] end
+            local loss = c:forward(Yt, Tt)
+            local dYt = c:backward(Yt, Tt)
+            m:backward(Xt, dYt)
+         end
+
+         if t:hasTargetAtTheEnd() and s == l then
+            for k,v in pairs(T) do Tt[k] = v[1] end
+            local loss = c:forward(Yt, Tt)
+            local dYt = c:backward(Yt, Tt)
+            m:backward(Xt, dYt)
+         end
       end
       t:displayCurrentBatch("test")
       sys.sleep(0.02)
