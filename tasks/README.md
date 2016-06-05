@@ -1,6 +1,6 @@
-# Tasks
+# Tasks #
 
-## TL;DR
+## TL;DR ##
 
 Each task should be implemented as a class that inherits `tasks.Task`.
 
@@ -29,7 +29,7 @@ Implement `YourTask:__generateBatch(Xs, Ts, Fs, L, isTraining)` where:
  - `L` is `nil` if `self.fixedLength` is `true` or a tensor with
    length `batchSize` otherwise
 
-## General options
+## General options ##
 
 The following fields can be configured through the `opt` argument:
 
@@ -48,7 +48,7 @@ The following fields can be configured through the `opt` argument:
 
 Of course, other task specific options might be configured.
 
-## API
+## API ##
 
  - `__init(opt)` - constructor
  - `updateBatch(split)` - split should be `"train"` or `"test"`
@@ -63,66 +63,92 @@ Of course, other task specific options might be configured.
  - `displayCurrentBatch()`
 
 
-## inputsInfo
+## inputsInfo ##
 
 `self.inputsInfo` should be a Lua array (a table) with an entry for
 each separate input. Each entry is a table with at least the `"size"`
 key.
 
-## outputsInfo
+## outputsInfo ##
 
 `self.outputsInfo` should be a Lua array (a table) with an entry for
 each separate output. Each entry is a table with `"size"` and
 `"type"`. The value for `"type"` should be one of the following:
 `"one-hot", "regression", "binary"`.
 
-## Implemented tasks
+## Implemented tasks ##
 
-### Doom Clock
+### Doom Clock ###
 
-This tasks assumes you have an **internal state**. You receive an
-one-hot encoded vector of size 2. When the second value is positive
-you have to switch an internal state. The output at each step must be
-the internal state.
+This tasks assumes you have a rotating **internal state**. You receive
+an one-hot encoded vector of size 2. When the second value is positive
+you have to shift the internal state. The output at each step must be
+the internal state (a class).
 
-### Get Next
+#### Options ####
+
+ - `mean` - the mean to be used in Bernoulli when generating bits
+ - `maxValue` - the maximum value for the internal state
+
+### Get Next ###
 
 This tasks goes for **key** addressing. You receive a *key* and a
 sequence of vectors. At the end of the sequence you must return the
 next value after the *key*.
 
-### Indexing
+#### Options ####
+
+ - `mean` - the mean to be used in Bernoulli when generating bits
+ - `vectorSize` - the size of each vector in sequence
+
+
+### Indexing ###
 
 You receive a number which represents the index of the desired
 vector. Another input receives the vectors from a sequence one by
 one. At the end of the sequence you must return the nth vector.
 
-### Copy First
+#### Options ####
+
+ - `mean` - the mean to be used in Bernoulli when generating bits
+ - `vectorSize` - the size of each vector in sequence
+
+### Copy First ###
 
 This tasks requires the model to remember the first vector from a
 sequence and reproduce it at each step.
 
-####Options
+#### Options ####
 
- - `vectorSize`
- - `mean`
+ - `mean` - the mean to be used in Bernoulli when generating bits
+ - `vectorSize` - the size of each vector in sequence
 
-### Copy
+### Copy ###
 
 Copy input to output. The model must learn the identity function.
 
-####Options
+#### Options ####
 
- - `vectorSize`
- - `mean`
+ - `mean` - the mean to be used in Bernoulli when generating bits
+ - `vectorSize` - the size of each vector in sequence
 
-### Binary Sum
+### Binary Sum ###
 
-You receive two sequences of binary signals. You must sum them.
+You receive a couple of sequences of binary signals. You must sum them.
 
-### Substract On Signal
+#### Options ####
+
+ - `mean` - the mean to be used in Bernoulli when generating bits
+ - `inputsNo` - the number of binary sequences that must be summed
+
+### Subtract On Signal ###
 
 You are given two numbers A and B and a sequence of binary
 signals. You start with D, a number you must output, equal to A. Every
-time the signal is positive you substract B from D. You must also
+time the signal is positive you subtract B from D. You must also
 output the number of positive signals and if D is positive.
+
+#### Options ####
+
+ - `mean` - the mean to be used in Bernoulli when generating bits
+ - `maxValue` - the maximum value for A

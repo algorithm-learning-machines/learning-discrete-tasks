@@ -75,7 +75,7 @@ function BinarySum:__generateBatch(Xs, Ts, Fs, L, isTraining)
       for t = 1, seqLength do
          for j = 1, #Xs do
             local z = torch.bernoulli(mean) + 1
-            Xs[i][{t, i, z}] = self.positive
+            Xs[j][{t, i, z}] = self.positive
             if z == 2 then carry = carry + 1 end
          end
          if carry % 2 == 1 then

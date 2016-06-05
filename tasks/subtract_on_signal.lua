@@ -1,13 +1,13 @@
 --------------------------------------------------------------------------------
--- This class implements the Substract On Signal task.
+-- This class implements the Subtract On Signal task.
 -- See README.md for details.
 --------------------------------------------------------------------------------
 
 require("tasks.task")
 
-local SubstractOnSignal, Parent = torch.class("SubstractOnSignal", "Task")
+local SubtractOnSignal, Parent = torch.class("SubtractOnSignal", "Task")
 
-function SubstractOnSignal:__init(opt)
+function SubtractOnSignal:__init(opt)
 
    opt = opt or {}
 
@@ -32,7 +32,7 @@ function SubstractOnSignal:__init(opt)
 
 end
 
-function SubstractOnSignal:__generateBatch(Xs, Ts, Fs, L, isTraining)
+function SubtractOnSignal:__generateBatch(Xs, Ts, Fs, L, isTraining)
 
    isTraining = isTraining == nil and true or isTraining
 

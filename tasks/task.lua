@@ -592,6 +592,49 @@ function Task:displayCurrentBatch(split, zoom)
    }
 end
 
+function Task:printCurrentBatch(split)
+   split = split == nil and "train" or split
+
+   local bs = self.batchSize
+   local seqLength, inputBatch, targetBatcha
+
+   if split == "train" then
+      seqLength = self.trainMaxLength
+      if not self.fixedLength then
+         seqLength = self.trainLengthsBatch[1]
+      end
+      inputBatch = self.trainInputsBatch
+      targetBatch = self.trainTargetsBatch
+   elseif split == "test" then
+      seqLength = self.testMaxLength
+      if not self.fixedLength then
+         seqLength = self.testLengthsBatch[1]
+      end
+      inputBatch = self.testInputsBatch
+      targetBatch = self.testTargetsBatch
+   else
+      assert(false, "unknown split: " .. split)
+   end
+
+   self:message("Printing batch")
+   for i = 1, bs do
+      print("Example " .. i)
+      print("Inputs:")
+      for k, v in pairs(self.inputsInfo) do
+         print(inputBatch[k]:select(2,i):t())
+      end
+      print("Outputs:")
+      for k, v in pairs(self.outputsInfo) do
+         if targetBatch[k]:nDimension() == 3 then
+            print(targetBatch[k]:select(2,i):t())
+         else
+            print(targetBatch[k]:select(2,i))
+         end
+      end
+   end
+   self:message("---DONE")
+end
+
 --------------------------------------------------------------------------------
 -- Function to be used when being verbose
 --------------------------------------------------------------------------------
