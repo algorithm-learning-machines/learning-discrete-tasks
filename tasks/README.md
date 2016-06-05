@@ -102,13 +102,19 @@ one. At the end of the sequence you must return the nth vector.
 This tasks requires the model to remember the first vector from a
 sequence and reproduce it at each step.
 
-Options:
+####Options
 
  - `vectorSize`
+ - `mean`
 
 ### Copy
 
 Copy input to output. The model must learn the identity function.
+
+####Options
+
+ - `vectorSize`
+ - `mean`
 
 ### Binary Sum
 

@@ -19,6 +19,8 @@ function CopyFirst:__init(opt)
    self.inputsInfo = {{["size"] = self.vectorSize}}
    self.outputsInfo = {{["size"] = self.vectorSize, ["type"] = "binary"}}
 
+   self.mean = opt.mena or 0.5
+
    self.targetAtEachStep = true
 
    self:__initTensors()
@@ -61,7 +63,7 @@ function CopyFirst:__generateBatch(Xs, Ts, Fs, L, isTraining)
    end
 
    local gen = function()
-      if torch.bernoulli(0.6) > 0.5 then
+      if torch.bernoulli(self.mean) > 0.5 then
          return self.positive
       else
          return self.negative

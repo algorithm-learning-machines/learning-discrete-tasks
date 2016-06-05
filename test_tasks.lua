@@ -12,7 +12,8 @@ require("criterions.generic_criterion")
 -- Add tasks here to test them.
 
 require("tasks.copy_first")
-local tasks = {CopyFirst}
+require("tasks.copy")
+local tasks = {Copy, CopyFirst}
 
 --------------------------------------------------------------------------------
 -- Change options here to test stuff.
@@ -21,7 +22,7 @@ local opt = {}
 
 opt.batchSize = 3
 opt.positive = 1
-opt.negative = -1
+opt.negative = 0
 opt.trainMaxLength = 10
 opt.testMaxLength = 20
 opt.fixedLength = false
@@ -32,6 +33,7 @@ opt.verbose = true
 
 -- Task specific options
 opt.vectorSize = 10
+opt.mean = 0.9
 
 --------------------------------------------------------------------------------
 -- Simulate a training process with a dumb model

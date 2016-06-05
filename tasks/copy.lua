@@ -1,4 +1,9 @@
-local Task = require("tasks.task")
+--------------------------------------------------------------------------------
+-- This class implements the Copy task.
+-- See README.md for details.
+--------------------------------------------------------------------------------
+
+require("tasks.task")
 
 local Copy, Parent = torch.class("Copy", "Task")
 
@@ -7,17 +12,19 @@ function Copy:__init(opt)
 
    Parent.__init(self, opt)
 
-   self.isClassification = true
+   self.vectorSize = opt.vectorSize
+   self.inputsInfo = {{["size"] = self.vectorSize}}
+   self.outputsInfo = {{["size"] = self.vectorSize, ["type"] = "binary"}}
 
-   self.inputSize = opt.inputSize or 10
-   self.outputSize = self.inputSize
+   self.mean = opt.mean or 0.5
 
    self.targetAtEachStep = true
 
-   self:initTensors()
+   self:__initTensors()
+   self:__initCriterions()
 end
 
-function Copy:generateBatch(X, T, F, L, isTraining)
+function Copy:__generateBatch(Xs, Ts, Fs, L, isTraining)
 
    isTraining = isTraining == nil and true or isTraining
 
@@ -30,18 +37,19 @@ function Copy:generateBatch(X, T, F, L, isTraining)
 
    local bs = self.batchSize
 
+   local X = Xs[1]
+   local T = Ts[1]
+   local F = Fs[1]
+
    if not self.noAsserts then
-      local ins = self.inputSize
-      local outs = self.outputSize
+      local vSize = self.vectorSize
 
       assert(X:nDimension() == 3)
-      assert(X:size(1) == seqLength and X:size(2) == bs and X:size(3) == ins)
+      assert(X:size(1) == seqLength and X:size(2) == bs and X:size(3) == vSize)
       assert(T:nDimension() == 3)
-      assert((T:size(1) == seqLength or T:size(1) == 1 and self.targetAtTheEnd))
-      assert(T:size(2) == bs and T:size(3) == outs)
-      assert((self.targetAtEachStep or self.targetAtTheEnd) or F ~= nil)
-      assert(F == nil or F:size(1) == T:size(1) and F:size(2) == T:size(2)
-                and F:size(3) == T:size(3))
+      assert(T:size(1) == seqLength and self.targetAtEachStep)
+      assert(T:size(2) == bs and T:size(3) == vSize)
+      assert(F == nil)
       assert(self.fixedLength or L:nDimension() == 1 and L:size(1) == bs)
    end
 
@@ -52,7 +60,7 @@ function Copy:generateBatch(X, T, F, L, isTraining)
 
 
    local gen = function()
-      if torch.bernoulli(0.6) > 0.5 then
+      if torch.bernoulli(self.mean) > 0.5 then
          return self.positive
       else
          return self.negative
