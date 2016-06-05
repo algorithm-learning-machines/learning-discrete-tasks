@@ -1,7 +1,6 @@
 --------------------------------------------------------------------------------
--- This class implementes the Doom Clock task.
--- 1 input: a one-hot encoded vector of size 2
--- 1 output: a one-hot encoded vector of size 2 (targets are scalars)
+-- This class implements the Doom Clock task.
+-- See README.md for details.
 --------------------------------------------------------------------------------
 
 require("tasks.task")
@@ -9,15 +8,18 @@ require("tasks.task")
 local DoomClock, Parent = torch.class("DoomClock", "Task")
 
 function DoomClock:__init(opt)
-   Parent.__init(self, opt)
+
+   opt = opt or {}
 
    self.name = "Doom Clock"
 
-   self.maxCount = opt.maxCount or 3
+   Parent.__init(self, opt)
+
+   self.maxValue = opt.maxValue or 3
    self.mean = opt.mean or 0.3
 
    self.inputsInfo = {{["size"] = 2}}
-   self.outputsInfo = {{["size"] = self.maxCount, ["type"] = "one-hot"}}
+   self.outputsInfo = {{["size"] = self.maxValue, ["type"] = "one-hot"}}
 
    self.targetAtEachStep = true
 
@@ -60,6 +62,7 @@ function DoomClock:__generateBatch(Xs, Ts, Fs, L, isTraining)
    end
 
    local mean = self.mean
+   local maxValue = self.maxValue
 
    for i = 1, bs do
       local s = 1
@@ -69,7 +72,7 @@ function DoomClock:__generateBatch(Xs, Ts, Fs, L, isTraining)
          else
             X[j][i][2] = self.positive
             s = s + 1
-            if s > self.maxCount then s = 1 end
+            if s > maxValue then s = 1 end
          end
          T[j][i] = s
       end

@@ -1,8 +1,6 @@
 --------------------------------------------------------------------------------
--- This file implements the indexing task.
--- There are two inputs: an integer n representing the index of the desired info
--- and a sequence of binary vectors. The target is given at the end of the
--- sequence and it has to be the nth binary vector.
+-- This class implements the Indexing task.
+-- See README.md for details.
 --------------------------------------------------------------------------------
 
 require("tasks.task")
@@ -13,10 +11,12 @@ function Indexing:__init(opt)
 
    opt = opt or {}
 
+   self.name = "Indexing"
+
    Parent.__init(self, opt)
 
-   self.name = "Indexing"
    self.vectorSize = opt.vectorSize or 10
+   self.mean = opt.mean or 0.5
 
    self.inputsInfo = {{["size"] = 1}, {["size"] = self.vectorSize}}
    self.outputsInfo = {{["size"] = self.vectorSize, ["type"] = "binary"}}
@@ -60,8 +60,15 @@ function Indexing:__generateBatch(Xs, Ts, Fs, L, isTraining)
    end
 
    N:fill(0)
-   local values = {self.positive, self.negative}
-   X:apply(function() return values[torch.random(2)] end)
+
+   local mean = self.mean
+   X:apply(function()
+         if torch.bernoulli(mean) > 0.5 then
+            return self.positive
+         else
+            return self.negative
+         end
+   end)
 
    if not self.fixedLength then
       seqLength = torch.random(1, seqLength)

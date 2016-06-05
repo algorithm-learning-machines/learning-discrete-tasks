@@ -11,15 +11,15 @@ function Copy:__init(opt)
 
    opt = opt or {}
 
-   Parent.__init(self, opt)
-
    self.name = "Copy"
 
+   Parent.__init(self, opt)
+
    self.vectorSize = opt.vectorSize
+   self.mean = opt.mean or 0.5
+
    self.inputsInfo = {{["size"] = self.vectorSize}}
    self.outputsInfo = {{["size"] = self.vectorSize, ["type"] = "binary"}}
-
-   self.mean = opt.mean or 0.5
 
    self.targetAtEachStep = true
 

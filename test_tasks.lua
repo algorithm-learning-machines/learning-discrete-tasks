@@ -16,8 +16,12 @@ require("tasks.copy")
 require("tasks.doom_clock")
 require("tasks.indexing")
 require("tasks.get_next")
+require("tasks.binary_sum")
+require("tasks.substract_on_signal")
 
-local tasks = {GetNext, Indexing, DoomClock, Copy, CopyFirst}
+local tasks = {
+   GetNext, Indexing, DoomClock, Copy, CopyFirst, SubstractOnSignal, BinarySum
+}
 
 --------------------------------------------------------------------------------
 -- Change options here to test stuff.
@@ -31,8 +35,8 @@ opt.trainMaxLength = 10
 opt.testMaxLength = 20
 opt.fixedLength = false
 opt.onTheFly = false
-opt.trainSize = 1000
-opt.testSize = 1000
+opt.trainSize = 100
+opt.testSize = 100
 opt.verbose = true
 
 -- Task specific options
