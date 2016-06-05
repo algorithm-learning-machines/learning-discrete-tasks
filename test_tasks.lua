@@ -17,10 +17,10 @@ require("tasks.doom_clock")
 require("tasks.indexing")
 require("tasks.get_next")
 require("tasks.binary_sum")
-require("tasks.substract_on_signal")
+require("tasks.subtract_on_signal")
 
 local tasks = {
-   GetNext, Indexing, DoomClock, Copy, CopyFirst, SubstractOnSignal, BinarySum
+   GetNext, Indexing, DoomClock, Copy, CopyFirst, SubtractOnSignal, BinarySum
 }
 
 --------------------------------------------------------------------------------
@@ -43,6 +43,7 @@ opt.verbose = true
 opt.vectorSize = 10
 opt.mean = 0.5
 opt.maxCount = 5
+opt.inputsNo = 3
 
 --------------------------------------------------------------------------------
 -- Simulate a training process with a dumb model
@@ -55,7 +56,7 @@ for _, T in pairs(tasks) do                                    -- take each task
 
    t:resetIndex("train")
    local i = 0
-
+   local err = {}
    while not t:isEpochOver() or (opt.onTheFly and i < 100) do
       X, T, F, L = t:updateBatch()
       local l = L[1]                 -- whole batch has the same sequence length
@@ -63,6 +64,8 @@ for _, T in pairs(tasks) do                                    -- take each task
          local Xt, Tt = {}, {}
          for k,v in pairs(X) do Xt[k] = v[s] end
          local Yt = m:forward(Xt)
+
+         t:evaluateBatch(Yt, Xt, err)
 
          if t:hasTargetAtEachStep() then
             for k,v in pairs(T) do Tt[k] = v[s] end
@@ -80,6 +83,7 @@ for _, T in pairs(tasks) do                                    -- take each task
        end
 
       t:displayCurrentBatch()
+      -- t:printCurrentBatch()
       sys.sleep(0.02)
       i = i + 1
    end
@@ -114,6 +118,7 @@ for _, T in pairs(tasks) do                                    -- take each task
          end
       end
       t:displayCurrentBatch("test")
+      -- t:printCurrentBatch("test")
       sys.sleep(0.02)
       i = i - 1
    end
