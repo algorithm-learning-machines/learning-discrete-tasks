@@ -5,9 +5,17 @@
 locales = {'en_US.UTF-8'}
 os.setlocale(locales[1])
 
-require("tasks.copy_first")
+local createDumbModel = require("models.dumb_model")
+require("criterions.generic_criterion")
 
+--------------------------------------------------------------------------------
+-- Add tasks here to test them.
+
+require("tasks.copy_first")
 local tasks = {CopyFirst}
+
+--------------------------------------------------------------------------------
+-- Change options here to test stuff.
 
 local opt = {}
 
@@ -22,21 +30,49 @@ opt.trainSize = 1000
 opt.testSize = 1000
 opt.verbose = true
 
+-- Task specific options
 opt.vectorSize = 10
 
-for _, T in pairs(tasks) do
-   local i = 0
+--------------------------------------------------------------------------------
+-- Simulate a training process with a dumb model
+
+for _, T in pairs(tasks) do                                    -- take each task
    t = T(opt)
+
+   local m = createDumbModel(t, opt)                      -- create a dumb model
+   local c = GenericCriterion(t, opt)              -- create a generic criterion
+
    t:resetIndex("train")
-   while not t:isEpochOver() and i < 100 do
-      t:updateBatch()
+   local i = 0
+
+   while not t:isEpochOver() and (opt.onTheFly and i < 100) do
+      X, T, F, L = t:updateBatch()
+      for t = 1, L[1] do                              -- go through the sequence
+         local Xt, Tt = {}, {}
+         for k,v in pairs(X) do Xt[k] = v[t] end
+         for k,v in pairs(T) do Tt[k] = v[t] end
+         local Yt = m:forward(Xt)
+         local loss = c:forward(Yt, Tt)
+         local dYt = c:backward(Yt, Tt)
+         m:backward(Xt, dYt)
+      end
       t:displayCurrentBatch()
       sys.sleep(0.02)
       i = i + 1
    end
+
    t:resetIndex("test")
-   while not t:isEpochOver("test") and i > 0 do
-      t:updateBatch("test")
+   while not t:isEpochOver("test") and (opt.onTheFly and i > 0) do
+      X, T, F, L = t:updateBatch("test")
+      for t = 1, L[1] do                              -- go through the sequence
+         local Xt, Tt = {}, {}
+         for k,v in pairs(X) do Xt[k] = v[t] end
+         for k,v in pairs(T) do Tt[k] = v[t] end
+         local Yt = m:forward(Xt)
+         local loss = c:forward(Yt, Tt)
+         local dYt = c:backward(Yt, Tt)
+         m:backward(Xt, dYt)
+      end
       t:displayCurrentBatch("test")
       sys.sleep(0.02)
       i = i - 1
