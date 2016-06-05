@@ -8,9 +8,12 @@ require("tasks.task")
 local Copy, Parent = torch.class("Copy", "Task")
 
 function Copy:__init(opt)
+
    opt = opt or {}
 
    Parent.__init(self, opt)
+
+   self.name = "Copy"
 
    self.vectorSize = opt.vectorSize
    self.inputsInfo = {{["size"] = self.vectorSize}}
