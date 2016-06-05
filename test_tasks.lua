@@ -65,7 +65,7 @@ for _, T in pairs(tasks) do                                    -- take each task
          for k,v in pairs(X) do Xt[k] = v[s] end
          local Yt = m:forward(Xt)
 
-         t:evaluateBatch(Yt, Xt, err)
+         -- t:evaluateBatch(Yt, Xt, err)
 
          if t:hasTargetAtEachStep() then
             for k,v in pairs(T) do Tt[k] = v[s] end
