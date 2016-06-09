@@ -6,6 +6,8 @@ locales = {'en_US.UTF-8'}
 os.setlocale(locales[1])
 
 local createDumbModel = require("models.dumb_model")
+local memory_model = require("models.memory_model")
+
 require("criterions.generic_criterion")
 
 --------------------------------------------------------------------------------
@@ -28,7 +30,7 @@ local tasks = {
 
 local opt = {}
 
-opt.batchSize = 3
+opt.batchSize = 1
 opt.positive = 1
 opt.negative = -1
 opt.trainMaxLength = 10
@@ -43,17 +45,19 @@ opt.verbose = true
 opt.vectorSize = 10
 opt.mean = 0.5
 opt.maxCount = 5
-opt.inputsNo = 3
+opt.inputsNo = 4
+opt.memorySize = 20
 
 --------------------------------------------------------------------------------
--- Simulate a training process with a dumb model
+-- Simulate a training process with a memory model 
 
 for _, T in pairs(tasks) do                                    -- take each task
    t = T(opt)
 
    local m = createDumbModel(t, opt)                      -- create a dumb model
+   local m1 = memory_model.createMyModel(t, opt)
    local c = GenericCriterion(t, opt)              -- create a generic criterion
-
+   c.noAsserts = true                              -- temp fix
    t:resetIndex("train")
    local i = 0
    local err = {}
@@ -63,26 +67,51 @@ for _, T in pairs(tasks) do                                    -- take each task
       for s = 1, l do                                 -- go through the sequence
          local Xt, Tt = {}, {}
          for k,v in pairs(X) do Xt[k] = v[s] end
-         local Yt = m:forward(Xt)
+         Xt = Xt[1] -- todo remove this hack
+         -- Problem -> memory model cannot process batches in parallel
+         -- Problem -> #Xt == 2 in here seems hardcoded, why?
+         -- Problem -> memory model is not tailored for direct inputs
+         -- Should need a wrapper to move inputs to memory or 
+         -- add input line to memory;
+         local mem = torch.Tensor(opt.memorySize - 1, Xt:size(2))
+
+         mem = torch.cat(Xt, mem, 1)  
+         dummy = torch.Tensor(opt.memorySize)
+            
+         --local mem = torch.Tensor(m1.memSize, Xt[1]:size(1))
+         local Yt = m1:forward({mem, dummy})[1][1]
 
          -- t:evaluateBatch(Yt, Xt, err)
 
          if t:hasTargetAtEachStep() then
             for k,v in pairs(T) do Tt[k] = v[s] end
+            Tt = Tt[1]
             local loss = c:forward(Yt, Tt)
             local dYt = c:backward(Yt, Tt)
-            m:backward(Xt, dYt)
+            local dummy_back = torch.Tensor(opt.memorySize)
+            local mem = torch.Tensor(opt.memorySize - 1, Xt:size(2))
+            m1:backward({torch.cat(Xt, mem, 1), dummy_back},
+               {dYt, torch.Tensor(opt.memorySize)})
          end
 
          if t:hasTargetAtTheEnd() and s == l then
             for k,v in pairs(T) do Tt[k] = v[1] end
+            Tt = Tt[1]
+
             local loss = c:forward(Yt, Tt)
             local dYt = c:backward(Yt, Tt)
-            m:backward(Xt, dYt)
+            local dYt_mem = torch.Tensor(opt.memorySize - 1, Xt:size(2))
+            dYt_mem = torch.cat(dYt:reshape(1, dYt:size()[1]), dYt_mem, 1)
+            local dummy_back = torch.Tensor(opt.memorySize)
+            local mem = torch.Tensor(opt.memorySize - 1, Xt:size(2))
+            mem = torch.cat(Xt, mem, 1)
+            --print(dummy_back:size())
+            m1:backward({mem, dummy_back},
+               {dYt_mem, torch.Tensor(opt.memorySize)})
          end
        end
 
-      t:displayCurrentBatch()
+      --t:displayCurrentBatch()
       -- t:printCurrentBatch()
       sys.sleep(0.02)
       i = i + 1
@@ -94,33 +123,35 @@ for _, T in pairs(tasks) do                                    -- take each task
    t:cuda()
    c:cuda()
 
-   t:resetIndex("test")
-   while not t:isEpochOver("test") or (opt.onTheFly and i > 0) do
-      X, T, F, L = t:updateBatch("test")
-      local l = L[1]
-      for s = 1, l do                                 -- go through the sequence
-         local Xt, Tt = {}, {}
-         for k,v in pairs(X) do Xt[k] = v[s] end
-         local Yt = m:forward(Xt)
+   --t:resetIndex("test")
+   --while not t:isEpochOver("test") or (opt.onTheFly and i > 0) do
+      --X, T, F, L = t:updateBatch("test")
+      --local l = L[1]
+      --for s = 1, l do                                 -- go through the sequence
+         --local Xt, Tt = {}, {}
+         --for k,v in pairs(X) do Xt[k] = v[s] end
+         --local Yt = m:forward(Xt)
 
-         if t:hasTargetAtEachStep() then
-            for k,v in pairs(T) do Tt[k] = v[s] end
-            local loss = c:forward(Yt, Tt)
-            local dYt = c:backward(Yt, Tt)
-            m:backward(Xt, dYt)
-         end
+         --if t:hasTargetAtEachStep() then
+            --for k,v in pairs(T) do Tt[k] = v[s] end
+            --local loss = c:forward(Yt, Tt)
+            --local dYt = c:backward(Yt, Tt)
+            --m:backward(Xt, dYt)
+         --end
 
-         if t:hasTargetAtTheEnd() and s == l then
-            for k,v in pairs(T) do Tt[k] = v[1] end
-            local loss = c:forward(Yt, Tt)
-            local dYt = c:backward(Yt, Tt)
-            m:backward(Xt, dYt)
-         end
-      end
-      t:displayCurrentBatch("test")
-      -- t:printCurrentBatch("test")
-      sys.sleep(0.02)
-      i = i - 1
-   end
+         --if t:hasTargetAtTheEnd() and s == l then
+            --for k,v in pairs(T) do Tt[k] = v[1] end
+            --local loss = c:forward(Yt, Tt)
+            --local dYt = c:backward(Yt, Tt)
+            --print(loss)
+            --print(dYt)
+            --m:backward(Xt, dYt)
+         --end
+      --end
+      ---- t:displayCurrentBatch("test")
+      ---- t:printCurrentBatch("test")
+      --sys.sleep(0.02)
+      --i = i - 1
+   --end
 
 end
