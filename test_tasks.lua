@@ -53,7 +53,7 @@ opt.memorySize = 20
 
 for _, T in pairs(tasks) do                                    -- take each task
    t = T(opt)
-   if (t.name == "copy") then
+   if (t.name == "Copy") then
    local m = createDumbModel(t, opt)                      -- create a dumb model
    local m1 = memory_model.createMyModel(t, opt)
    local c = GenericCriterion(t, opt)              -- create a generic criterion
@@ -67,17 +67,16 @@ for _, T in pairs(tasks) do                                    -- take each task
       for s = 1, l do                                 -- go through the sequence
          local Xt, Tt = {}, {}
          for k,v in pairs(X) do Xt[k] = v[s] end
-         --print(#Xt)
          --print("gigi are mere")
-         Xt = Xt[1] -- todo remove this hack
+         --Xt = Xt[1] -- todo remove this hack
          -- Problem -> memory model cannot process batches in parallel
          -- Problem -> #Xt == 2 in here seems hardcoded, why?
          -- Problem -> memory model is not tailored for direct inputs
          -- Should need a wrapper to move inputs to memory or 
          -- add input line to memory;
-         local mem = torch.Tensor(opt.memorySize - 1, Xt:size(2))
+         local mem = torch.Tensor(opt.memorySize - 1, Xt[1]:size(2))
 
-         mem = torch.cat(Xt, mem, 1)  
+         mem = torch.cat(Xt[1], mem, 1)  
          dummy = torch.Tensor(opt.memorySize)
             
          --local mem = torch.Tensor(m1.memSize, Xt[1]:size(1))
@@ -87,27 +86,28 @@ for _, T in pairs(tasks) do                                    -- take each task
 
          if t:hasTargetAtEachStep() then
             for k,v in pairs(T) do Tt[k] = v[s] end
-            Tt = Tt[1]
-            local loss = c:forward(Yt, Tt)
-            local dYt = c:backward(Yt, Tt)
+            local loss = c:forward(Yt, Tt[1])
+            local dYt = c:backward(Yt, Tt[1])
             local dummy_back = torch.Tensor(opt.memorySize)
-            local mem = torch.Tensor(opt.memorySize - 1, Xt:size(2))
-            m1:backward({torch.cat(Xt, mem, 1), dummy_back},
-               {dYt, torch.Tensor(opt.memorySize)})
+            local mem = torch.Tensor(opt.memorySize - 1, Xt[1]:size(2))
+            local temp = torch.cat(Xt[1], mem, 1)
+            local dYt_mem = torch.Tensor(opt.memorySize - 1, Xt[1]:size(2))
+            dYt_mem = torch.cat(dYt:reshape(1, dYt:size()[1]), dYt_mem, 1)
+
+            m1:backward({temp, dummy_back},
+               {dYt_mem, torch.Tensor(opt.memorySize)})
          end
 
          if t:hasTargetAtTheEnd() and s == l then
             for k,v in pairs(T) do Tt[k] = v[1] end
-            Tt = Tt[1]
 
-            local loss = c:forward(Yt, Tt)
-            local dYt = c:backward(Yt, Tt)
-            local dYt_mem = torch.Tensor(opt.memorySize - 1, Xt:size(2))
+            local loss = c:forward(Yt, Tt[1])
+            local dYt = c:backward(Yt, Tt[1])
+            local dYt_mem = torch.Tensor(opt.memorySize - 1, Xt[1]:size(2))
             dYt_mem = torch.cat(dYt:reshape(1, dYt:size()[1]), dYt_mem, 1)
             local dummy_back = torch.Tensor(opt.memorySize)
             local mem = torch.Tensor(opt.memorySize - 1, Xt:size(2))
             mem = torch.cat(Xt, mem, 1)
-            --print(dummy_back:size())
             m1:backward({mem, dummy_back},
                {dYt_mem, torch.Tensor(opt.memorySize)})
          end
