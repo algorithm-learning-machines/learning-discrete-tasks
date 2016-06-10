@@ -24,8 +24,8 @@ end
 
 
 function memoryModelWrapper:forward(X, l, isTraining)
-
-   local mem = torch.Tensor(self.opt.memorySize - 1, X:size(2))
+   local X_l = X:size(1)
+   local mem = torch.Tensor(self.opt.memorySize - X_l, X:size(2))
    mem = torch.cat(X, mem, 1)
    local dummyAddress = torch.Tensor(self.opt.memorySize) -- temporary
 
@@ -35,10 +35,11 @@ function memoryModelWrapper:forward(X, l, isTraining)
 end
 
 function memoryModelWrapper:backward(X, dOutputs, l)
+   local X_l = X:size(1)
    local dummy_back = torch.Tensor(self.opt.memorySize) -- temporary
-   local mem = torch.Tensor(self.opt.memorySize - 1, X:size(2))
+   local mem = torch.Tensor(self.opt.memorySize - X_l, X:size(2))
    local temp = torch.cat(X, mem, 1)
-   local dOutputs_mem = torch.Tensor(self.opt.memorySize - 1, X:size(2))
+   local dOutputs_mem = torch.Tensor(self.opt.memorySize - X_l, X:size(2))
 
    dOutputs_mem = torch.cat(dOutputs:reshape(1, dOutputs:size()[1]),
       dOutputs_mem, 1)
