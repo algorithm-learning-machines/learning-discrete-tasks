@@ -6,13 +6,13 @@ require "rnn"
 require "nngraph"
 shift_learn = require("models.shift_learn")
 custom_sharpeners = require("models.custom_sharpeners")
-local memory_model = {}
+local memoryModel = {}
 
 --------------------------------------------------------------------------------
 -- !! Order of modules at end
 -- [initialMem, input, prevAddrWrite] -> [finMem, addrCalc, p, pNRAM]
 --------------------------------------------------------------------------------
-function memory_model.create(opt, addressReader, addressWriter, valueWriter)
+function memoryModel.create(opt, addressReader, addressWriter, valueWriter)
    local vectorSize = tonumber(opt.vectorSize)
    local memSize = tonumber(opt.memorySize)
    local inputSize = 0
@@ -207,7 +207,7 @@ end
 -- Save model to file
 -- Specify overWrite = true if you wish to overwrite an existent file
 --------------------------------------------------------------------------------
-function memory_model.saveModel(model, fileName, overWrite)
+function memoryModel.saveModel(model, fileName, overWrite)
 
    --TODO remove hardcoding
    if fileName == nil then
@@ -226,7 +226,7 @@ end
 --------------------------------------------------------------------------------
 -- Load a model from a file
 --------------------------------------------------------------------------------
-function memory_model.loadModel(fileName)
+function memoryModel.loadModel(fileName)
 
    if not path.exists(fileName) then
       print("file "..fileName.." does not exist. Create it first before loading something from it")
@@ -238,7 +238,7 @@ function memory_model.loadModel(fileName)
 end
 
 
-function memory_model.createMyModel(task, opt)
+function memoryModel.createMyModel(task, opt)
   addressReader = shift_learn.createWrapper
   addressWriter = shift_learn.createWrapper
   valueWriter = nn.Identity
@@ -247,8 +247,8 @@ function memory_model.createMyModel(task, opt)
   opt.noProb = true
   opt.simplified = true 
   opt.supervised = true
-  return memory_model.create(opt, addressReader, addressWriter, valueWriter)
+  return memoryModel.create(opt, addressReader, addressWriter, valueWriter)
 
 end
 
-return memory_model
+return memoryModel

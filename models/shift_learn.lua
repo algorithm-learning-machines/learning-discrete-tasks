@@ -5,9 +5,9 @@ local class = require("class")
 
 
 -- static class
-local shift_learn = class("shift_learn")
+local shiftLearn = class("shiftLearn")
 
-function shift_learn.create(vecSize)
+function shiftLearn.create(vecSize)
 
    -----------------------------------------------------------------------------
    -- Input def
@@ -35,7 +35,7 @@ function shift_learn.create(vecSize)
 
 end
 
-function shift_learn.createDummy(vecSize, shiftNo)
+function shiftLearn.createDummy(vecSize, shiftNo)
 
    -----------------------------------------------------------------------------
    -- Input def
@@ -76,7 +76,7 @@ end
 
 
 
-function shift_learn.createWrapper(vecSize, shiftNo)
+function shiftLearn.createWrapper(vecSize, shiftNo)
    -- shift address input
    print(shiftNo)
    -----------------------------------------------------------------------------
@@ -84,9 +84,9 @@ function shift_learn.createWrapper(vecSize, shiftNo)
    -----------------------------------------------------------------------------
    local shifter
    if shiftNo then
-      shifter = shift_learn.createDummy(vecSize, shiftNo)
+      shifter = shiftLearn.createDummy(vecSize, shiftNo)
    else
-      shifter = shift_learn.create(vecSize)
+      shifter = shiftLearn.create(vecSize)
    end
 
    -----------------------------------------------------------------------------
@@ -105,4 +105,4 @@ function shift_learn.createWrapper(vecSize, shiftNo)
 
 end
 
-return shift_learn
+return shiftLearn

@@ -8,9 +8,9 @@ require "nn"
 -- Simple sharpener that amplifies small differences by multiplying 
 -- with a large constant before softmaxing
 --------------------------------------------------------------------------------
-local mul_soft_max, Parent = torch.class("nn.mul_soft_max", "nn.Module")
+local mulSoftMax, Parent = torch.class("nn.mulSoftMax", "nn.Module")
 
-function mul_soft_max:__init(constant)
+function mulSoftMax:__init(constant)
    Parent.__init(self)
    self.constant = constant or 300
    seq = nn.Sequential()
@@ -19,15 +19,15 @@ function mul_soft_max:__init(constant)
    self.seq = seq
 end
 
-function mul_soft_max:updateOutput(input)
+function mulSoftMax:updateOutput(input)
    self.output = self.seq:updateOutput(input)
    return self.output
 end
 
-function mul_soft_max:updateGradInput(input, gradOutput)
+function mulSoftMax:updateGradInput(input, gradOutput)
    self.gradInput = self.seq:updateGradInput(input, gradOutput)
    return self.gradInput
 end
 
 
-return mul_soft_max
+return mulSoftMax
