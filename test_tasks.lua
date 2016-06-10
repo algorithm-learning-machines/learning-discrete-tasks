@@ -18,9 +18,11 @@ require("tasks.indexing")
 require("tasks.get_next")
 require("tasks.binary_sum")
 require("tasks.subtract_on_signal")
+require("tasks.func_mux")
 
 local tasks = {
-   GetNext, Indexing, DoomClock, Copy, CopyFirst, SubtractOnSignal, BinarySum
+   Copy
+   -- GetNext, Indexing, DoomClock, Copy, CopyFirst, SubtractOnSignal, BinarySum
 }
 
 --------------------------------------------------------------------------------
@@ -28,19 +30,19 @@ local tasks = {
 
 local opt = {}
 
-opt.batchSize = 3
+opt.batchSize = 1
 opt.positive = 1
 opt.negative = -1
 opt.trainMaxLength = 10
-opt.testMaxLength = 20
-opt.fixedLength = false
+opt.testMaxLength = 2
+opt.fixedLength = true
 opt.onTheFly = false
 opt.trainSize = 100
 opt.testSize = 100
 opt.verbose = true
 
 -- Task specific options
-opt.vectorSize = 10
+opt.vectorSize = 5
 opt.mean = 0.5
 opt.maxCount = 5
 opt.inputsNo = 3
@@ -59,10 +61,11 @@ for _, T in pairs(tasks) do                                    -- take each task
    local err = {}
    while not t:isEpochOver() or (opt.onTheFly and i < 100) do
       X, T, F, L = t:updateBatch()
-      local l = L[1]                 -- whole batch has the same sequence length
+      local l = (opt.fixedLength and opt.trainMaxLength) or L[1]
       for s = 1, l do                                 -- go through the sequence
          local Xt, Tt = {}, {}
          for k,v in pairs(X) do Xt[k] = v[s] end
+         print(#Xt)
          local Yt = m:forward(Xt)
 
          -- t:evaluateBatch(Yt, Xt, err)
@@ -97,7 +100,7 @@ for _, T in pairs(tasks) do                                    -- take each task
    t:resetIndex("test")
    while not t:isEpochOver("test") or (opt.onTheFly and i > 0) do
       X, T, F, L = t:updateBatch("test")
-      local l = L[1]
+      local l = (opt.fixedLength and opt.testMaxLength) or L[1]
       for s = 1, l do                                 -- go through the sequence
          local Xt, Tt = {}, {}
          for k,v in pairs(X) do Xt[k] = v[s] end
