@@ -53,7 +53,7 @@ opt.memorySize = 20
 
 for _, T in pairs(tasks) do                                    -- take each task
    t = T(opt)
-
+   if (t.name == "copy") then
    local m = createDumbModel(t, opt)                      -- create a dumb model
    local m1 = memory_model.createMyModel(t, opt)
    local c = GenericCriterion(t, opt)              -- create a generic criterion
@@ -67,6 +67,8 @@ for _, T in pairs(tasks) do                                    -- take each task
       for s = 1, l do                                 -- go through the sequence
          local Xt, Tt = {}, {}
          for k,v in pairs(X) do Xt[k] = v[s] end
+         --print(#Xt)
+         --print("gigi are mere")
          Xt = Xt[1] -- todo remove this hack
          -- Problem -> memory model cannot process batches in parallel
          -- Problem -> #Xt == 2 in here seems hardcoded, why?
@@ -153,5 +155,5 @@ for _, T in pairs(tasks) do                                    -- take each task
       --sys.sleep(0.02)
       --i = i - 1
    --end
-
+   end -- end if task == copy
 end
