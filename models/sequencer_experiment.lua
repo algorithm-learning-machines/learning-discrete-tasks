@@ -158,7 +158,6 @@ function SequencerExp:forwardSequence(input, isTraining)
    if self.allOutputs then
       return y
    else
-      print(y[length])
       return y[length]
    end
 
@@ -168,7 +167,7 @@ function SequencerExp:backward(input, gradOutput)
    self.crtIdx = self.crtIdx - 1                    -- go back to the last clone
    local outGrad, inSignal
    if self.crtIdx == self.crtLength then
-      outGrad = {gradOutput}
+      outGrad = gradOutput
    else
       if gradOutput then
          outGrad = {
@@ -180,8 +179,7 @@ function SequencerExp:backward(input, gradOutput)
          }
       end
    end
-
-   self.clones[self.crtIdx]:backward(inSignal, {outGrad[1], torch.Tensor(20)})
+   self.clones[self.crtIdx]:backward(input, {outGrad[1], torch.Tensor(20)})
    return self.clones[self.crtIdx].gradInput
 end
 

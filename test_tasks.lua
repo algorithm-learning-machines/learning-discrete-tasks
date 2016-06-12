@@ -86,7 +86,6 @@ for _, T in pairs(tasks) do                                    -- take each task
             input_table = {mem, dummyAddress}
             
             local Yt = seq:forwardSequence(input_table)[1]
-            print(Yt:size())
             -- t:evaluateBatch(Yt, Xt, err)
 
             if t:hasTargetAtEachStep() then
