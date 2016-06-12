@@ -237,6 +237,51 @@ function memoryModel.loadModel(fileName)
    return model
 end
 
+function cloneModel(model)
+   local params, gradParams
+   if model.parameters then
+      params, gradParams = model:parameters()
+      if params == nil then
+         params = {}
+      end
+   end
+   local paramsNoGrad
+   if model.parametersNoGrad then
+      paramsNoGrad = model:parametersNoGrad()
+   end
+   local mem = torch.MemoryFile("w"):binary()
+   mem:writeObject(model)
+
+   local reader = torch.MemoryFile(mem:storage(), "r"):binary()
+   local clone = reader:readObject()
+   reader:close()
+
+   if model.parameters then
+      local cloneParams, cloneGradParams = clone:parameters()
+      local cloneParamsNoGrad
+      for i = 1, #params do
+         --Sets reference to model's parameters
+         cloneParams[i]:set(params[i])
+         cloneGradParams[i]:set(gradParams[i])
+
+      end
+      if paramsNoGrad then
+         cloneParamsNoGrad = clone:parametersNoGrad()
+         for i =1,#paramsNoGrad do
+            ---- Sets reference to model's parameters
+            cloneParamsNoGrad[i]:set(paramsNoGrad[i])
+         end
+      end
+   end
+   collectgarbage()
+   mem:close()
+   return clone
+end
+
+function memoryModel:cloneModel()
+   return cloneModel(self)
+end
+
 
 function memoryModel.createMyModel(task, opt)
   addressReader = shift_learn.createWrapper

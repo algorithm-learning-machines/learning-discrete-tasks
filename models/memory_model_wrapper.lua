@@ -23,12 +23,14 @@ function memoryModelWrapper:zeroGradParameters()
    return self.model:zeroGradParameters()
 end
 
-function memoryModelWrapper:forward(X, l, isTraining)
+-- chained param tells whether model shall be used singularly or
+-- in a sequence of clones; clones imply that output of one model shall
+-- be input of the next clone 
+function memoryModelWrapper:forward(X, l)
    local X_l = X:size(1)
    local mem = torch.Tensor(self.opt.memorySize - X_l, X:size(2))
    mem = torch.cat(X, mem, 1)
-   local dummyAddress = torch.Tensor(self.opt.memorySize) -- temporary
-
+  local dummyAddress = torch.Tensor(self.opt.memorySize) -- temporary
    self.output = self.model:forward({mem, dummyAddress})
 
    return self.output
@@ -57,51 +59,10 @@ end
 -- helper function for returning final cloned module
 --------------------------------------------------------------------------------
 
-function cloneModel(model)
-   local params, gradParams
-   if model.parameters then
-      params, gradParams = model:parameters()
-      if params == nil then
-         params = {}
-      end
-   end
-   local paramsNoGrad
-   if model.parametersNoGrad then
-      paramsNoGrad = model:parametersNoGrad()
-   end
-   local mem = torch.MemoryFile("w"):binary()
-   mem:writeObject(model)
-
-   local reader = torch.MemoryFile(mem:storage(), "r"):binary()
-   local clone = reader:readObject()
-   reader:close()
-
-   if model.parameters then
-      local cloneParams, cloneGradParams = clone:parameters()
-      local cloneParamsNoGrad
-      for i = 1, #params do
-         --Sets reference to model's parameters
-         cloneParams[i]:set(params[i])
-         cloneGradParams[i]:set(gradParams[i])
-
-      end
-      if paramsNoGrad then
-         cloneParamsNoGrad = clone:parametersNoGrad()
-         for i =1,#paramsNoGrad do
-            ---- Sets reference to model's parameters
-            cloneParamsNoGrad[i]:set(paramsNoGrad[i])
-         end
-      end
-   end
-   collectgarbage()
-   mem:close()
-   return clone
-end
-
 
 function memoryModelWrapper:cloneModel()
   newModel = memoryModel(self.task, self.opt)
-  newModel.model = cloneModel(self.model)
+  newModel.model = newModel:cloneModel(self.model)
   return newModel
 end
 

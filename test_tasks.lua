@@ -6,12 +6,16 @@ locales = {'en_US.UTF-8'}
 os.setlocale(locales[1])
 
 local createDumbModel = require("models.dumb_model")
+local memoryModel = require("models.memory_model")
 require("models.memory_model_wrapper")
+require("models.sequencer_experiment")
 
 require("criterions.generic_criterion")
+require("criterions.mem_criterion")
 
 --------------------------------------------------------------------------------
 -- Add tasks here to test them.
+--------------------------------------------------------------------------------
 
 require("tasks.copy_first")
 require("tasks.copy")
@@ -47,6 +51,7 @@ opt.mean = 0.5
 opt.maxCount = 5
 opt.inputsNo = 4
 opt.memorySize = 20
+opt.allOutputs = false
 
 --------------------------------------------------------------------------------
 -- Simulate a training process with a memory model 
@@ -54,9 +59,10 @@ opt.memorySize = 20
 for _, T in pairs(tasks) do                                    -- take each task
    t = T(opt)
    if (t.name == "Copy") then
+      local seq = SequencerExp(5, memoryModel.createMyModel, t, opt)  
       local m = createDumbModel(t, opt)                   -- create a dumb model
       local m1 = memoryModelWrapper(t, opt)
-      local c = GenericCriterion(t, opt)           -- create a generic criterion
+      local c = MemCriterion(t, opt)           -- create a generic criterion
       c.noAsserts = true                              
       t:resetIndex("train")
       local i = 0
@@ -67,19 +73,31 @@ for _, T in pairs(tasks) do                                    -- take each task
          for s = 1, l do                              -- go through the sequence
             local Xt, Tt = {}, {}
             for k,v in pairs(X) do Xt[k] = v[s] end
+
             -- Problem -> memory model cannot process batches in parallel
-            -- Problem -> #Xt == 2 in here seems hardcoded, why?
             -- Problem -> memory model is not tailored for direct inputs
-
-            local Yt = m1:forward(Xt[1])[1][1]
-
+            
+            -- Yt is memory1]
+            local X_l = Xt[1]:size(1)
+            local mem = torch.Tensor(opt.memorySize - X_l, Xt[1]:size(2))
+            mem = torch.cat(Xt[1], mem, 1)
+             
+            local dummyAddress = torch.Tensor(opt.memorySize) -- temporary
+            input_table = {mem, dummyAddress}
+            
+            local Yt = seq:forwardSequence(input_table)[1]
+            print(Yt:size())
             -- t:evaluateBatch(Yt, Xt, err)
 
             if t:hasTargetAtEachStep() then
                for k,v in pairs(T) do Tt[k] = v[s] end
                local loss = c:forward(Yt, Tt[1])
                local dYt = c:backward(Yt, Tt[1])
-               m1:backward(Xt[1], dYt)
+               local dOutputs_mem = torch.Tensor(opt.memorySize -
+                  X_l, Xt[1]:size(2))
+
+               local dYt_mem = torch.cat(dYt, dOutputs_mem, 1)
+               seq:backward(input_table, {dYt_mem, torch.Tensor(opt.memorySize)})
             end
 
             if t:hasTargetAtTheEnd() and s == l then
@@ -87,8 +105,13 @@ for _, T in pairs(tasks) do                                    -- take each task
 
                local loss = c:forward(Yt, Tt[1])
                local dYt = c:backward(Yt, Tt[1])
+               local dOutputs_mem = torch.Tensor(opt.memorySize -
+                  X_l, Xt[1]:size(2))
 
-               m1:backward(Xt[1], dYt)
+               local dYt_mem = torch.cat(dYt, dOutputs_mem, 1)
+
+               seq:backward(input_table, {dYt_mem, torch.Tensor(opt.memorySize)})
+
             end
          end
 
