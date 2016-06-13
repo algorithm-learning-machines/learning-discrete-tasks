@@ -128,22 +128,13 @@ function FuncMux:__generateBatch(Xs, Ts, Fs, L, isTraining)
       local v1 = V1[1][i]:clone()
       local v2 = V2[1][i]:clone()
 
-      print("v1:")
-      print(v2)
-      print("v2:")
-      print(v2)
-      print("out:")
-
       for t = 1, seqLength do
          local fIdx = torch.random(1, fNo)
          Fun[t][i][fIdx] = self.positive
 
-         print("func: " .. fIdx)
          v2:map(v1, funcs[fIdx])
          T[t][i]:copy(v2)
-         print(v2)
       end
-      print("----")
    end
 
 end
