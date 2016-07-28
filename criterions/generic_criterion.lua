@@ -2,6 +2,7 @@
 -- Generic criterion
 --
 -- It receives a Task and builds a ParallelCriterion for all outputs.
+--
 -- In both forward and backward phases puts output in a table if it
 -- comes as a tensor (this happens because `nngraph` doesn't wrap
 -- single outputs in tables).
@@ -15,40 +16,43 @@ require("torch")
 require("nn")
 require("string.color")
 
+
 local GenericCriterion = torch.class("GenericCriterion")
 
-function GenericCriterion:__init(task, opt)
+function GenericCriterion:__init(task, opts)
 
-   opt = opt or {}
+   opts = opts or {}
 
-   self.verbose = opt.verbose or false
-   self.noAsserts = opt.noAsserts or false
+   self.verbose      = opts.verbose or false
+   self.noAssertions = opts.noAssertions or false
 
    local outputsInfo = task:getOutputsInfo()
 
    self.criterion = nn.ParallelCriterion()
 
    for k, v in pairs(outputsInfo) do
+
       if v.type == "regression" then
          self.criterion:add(nn.MSECriterion())
-         self:message("MSE Criterion added")
+         self:print("MSE Criterion added")
       elseif v.type == "one-hot" then
          self.criterion:add(nn.ClassNLLCriterion())
-         self:message("Class NLL Criterion added")
+         self:print("Class NLL Criterion added")
       elseif v.type == "binary" then
          self.criterion:add(nn.BCECriterion())
-         self:message("BCE Criterion added")
+         self:print("BCE Criterion added")
       else
          assert(false, "Unknown output type")
       end
+
    end
 
-   self:message("Created generic criterion")
+   self:print("Created generic criterion")
 end
 
 function GenericCriterion:forward(Y, T)
    if type(Y) ~= "table" then
-      if not self.noAsserts then assert(#T == 1) end
+      if not self.noAssertions then assert(#T == 1) end
       return self.criterion:forward({Y}, T)
    else
       return self.criterion:forward(Y, T)
@@ -57,7 +61,7 @@ end
 
 function GenericCriterion:backward(Y, T)
    if type(Y) ~= "table" then
-      if not self.noAsserts then assert(#T == 1) end
+      if not self.noAssertions then assert(#T == 1) end
       local dY = self.criterion:backward({Y}, T)
       return dY[1]
    else
@@ -73,9 +77,6 @@ end
 -- Function to be used when being verbose
 --------------------------------------------------------------------------------
 
-function GenericCriterion:message(m)
-   if self.verbose then
-      print(string.format("[CRITERION] "):color("green") ..
-               string.format(m):color("blue"))
-   end
+function GenericCriterion:print(...)
+   print("Generic Criterion", ...)
 end

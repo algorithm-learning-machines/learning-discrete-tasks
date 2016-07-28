@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
--- This files defines an abstract class that should be inherited by all classes
--- that implement a specific task.
+-- This files defines an abstract class that should be inherited by
+-- all classes that implement a specific task.
 --
 -- When implementing a new task the following functions should be implemented:
 --  * __init(opt)
@@ -19,57 +19,69 @@
 --
 --------------------------------------------------------------------------------
 
+--------------------------------------------------------------------------------
+-- Import needed modules
+--------------------------------------------------------------------------------
+
 require("torch")
 require("nn")
 require("string.color")
 
+--------------------------------------------------------------------------------
+-- Define the abstract class Task
+--------------------------------------------------------------------------------
+
 local Task = torch.class("Task")
 
-function Task:__init(opt)
+function Task:__init(opts)
 
-   opt = opt or {}
+   opts = opts or {}
 
-   self.verbose = opt.verbose or false
-   self.noAsserts = opt.noAsserts or false
+   self.verbose      = opts.verbose or false
+   self.noAssertions = opts.noAssertions or false
 
-   self.onTheFly = opt.onTheFly or false
+   self.onTheFly = opts.onTheFly or false
 
-   self.trainMaxLength = opt.trainMaxLength or 20
-   self.testMaxLength = opt.testMaxLength or (self.trainMaxLength * 2)
+   self.trainMaxLength = opts.trainMaxLength or 20
+   self.testMaxLength  = opts.testMaxLength  or (self.trainMaxLength * 2)
 
-   self.fixedLength = opt.fixedLength or false
-   self.batchSize = opt.batchSize == nil and 1 or opt.batchSize
+   self.fixedLength = opts.fixedLength or false
+   self.batchSize   = opts.batchSize == nil and 1 or opts.batchSize
 
-   self.positive = opt.positive or 1
-   self.negative = opt.negative or -1
+   self.positive = opts.positive or 1
+   self.negative = opts.negative or -1
 
    if not self.onTheFly then
-      self.trainSize = opt.trainSize or 10000
-      self.testSize = opt.testSize or 1000
+      self.trainSize = opts.trainSize or 10000
+      self.testSize = opts.testSize or 1000
       self.trainSize = self.trainSize - (self.trainSize % self.batchSize)
       self.testSize = self.testSize - (self.testSize % self.batchSize)
       self.trainIdx = 1
       self.testIdx = 1
    end
 
-   self:message("Parsed generic task options.")
+   self:print("Parsed generic task options.")
 end
 
 function Task:__initTensors()
-   if not self.noAsserts then
-      assert((self.inputsInfo ~= nil) and (self.outputsInfo ~= nil), "Ooops")
+
+   if not self.noAssertions then
+      assert(
+         (self.inputsInfo ~= nil) and (self.outputsInfo ~= nil),
+         "You must configure these two tables: inputsInfo and outputsInfo."
+      )
    end
 
-   local bs = self.batchSize
+   local bs  = self.batchSize
    local trl = self.trainMaxLength
    local tsl = self.testMaxLength
 
-   self.trainInputsBatch = {}
-   self.testInputsBatch = {}
-   self.trainTargetsBatch = {}
+   self.trainInputsBatch      = {}
+   self.testInputsBatch       = {}
+   self.trainTargetsBatch     = {}
    self.trainTargetFlagsBatch = {}
-   self.testTargetsBatch = {}
-   self.testTargetFlagsBatch = {}
+   self.testTargetsBatch      = {}
+   self.testTargetFlagsBatch  = {}
 
    if not self.onTheFly then
 
@@ -83,47 +95,55 @@ function Task:__initTensors()
       self.testInputs = {}
 
       for k, v in pairs(self.inputsInfo) do
-         local ins = v.size
+         local ins = v.size                               -- size of each output
          self.trainInputs[k] = torch.Tensor(trl, trs, ins)       -- train inputs
-         self.testInputs[k] = torch.Tensor(tsl, tss, ins)         -- test inputs
+         self.testInputs[k]  = torch.Tensor(tsl, tss, ins)        -- test inputs
       end
 
-      self.trainTargets = {}
+      self.trainTargets     = {}
       self.trainTargetFlags = {}
-      self.testTargets = {}
-      self.testTargetFlags = {}
+      self.testTargets      = {}
+      self.testTargetFlags  = {}
 
       for k, v in pairs(self.outputsInfo) do
+
          if v.type == "regression" or v.type == "binary" then
+
             local outs = v.size
             if self.targetAtTheEnd then                        -- vector targets
                self.trainTargets[k] = torch.Tensor(1, trs, outs)
-               self.testTargets[k] = torch.Tensor(1, tss, outs)
+               self.testTargets[k]  = torch.Tensor(1, tss, outs)
             else
                self.trainTargets[k] = torch.Tensor(trl, trs, outs)
-               self.testTargets[k] = torch.Tensor(tsl, tss, outs)
+               self.testTargets[k]  = torch.Tensor(tsl, tss, outs)
             end
+
          elseif v.type == "one-hot" then
+
             if self.targetAtTheEnd then                         -- class targets
                self.trainTargets[k] = torch.Tensor(1, trs)
-               self.testTargets[k] = torch.Tensor(1, tss)
+               self.testTargets[k]  = torch.Tensor(1, tss)
             else
                self.trainTargets[k] = torch.Tensor(trl, trs)
-               self.testTargets[k] = torch.Tensor(tsl, tss)
+               self.testTargets[k]  = torch.Tensor(tsl, tss)
             end
+
          else
+
             assert(false, "Unknown output type")
+
          end
 
          if not (self.targetAtTheEnd or self.targetAtEachStep) then     -- flags
             self.trainTargetFlags[k] = torch.ByteTensor(trl, trs)
             self.trainTargetFlags[k] = torch.ByteTensor(tsl, tss)
          end
+
       end
 
       if not self.fixedLength then                                    -- lengths
          self.trainLengths = torch.LongTensor(trs)
-         self.testLengths = torch.LongTensor(tss)
+         self.testLengths  = torch.LongTensor(tss)
       end
 
       for i = 1, (trs / bs) do
@@ -165,18 +185,17 @@ function Task:__initTensors()
       end
 
 
-      self:message("Created a " .. self.trainSize .. " train set.")
-      self:message("Created a " .. self.testSize .. " test set.")
+      self:print("Created a " .. self.trainSize .. " train set.")
+      self:print("Created a " .. self.testSize .. " test set.")
 
-   else
+   else  -- batches will be generated on the fly
 
       --------------------------------------------------------------------------
       -- Tensors for train and test batches
 
-
       for k, v in pairs(self.inputsInfo) do
          self.trainInputsBatch[k] = torch.Tensor(trl, bs, v.size)
-         self.testInputsBatch[k] = torch.Tensor(tsl, bs, v.size)
+         self.testInputsBatch[k]  = torch.Tensor(tsl, bs, v.size)
       end
 
       for k, v in pairs(self.outputsInfo) do
@@ -184,18 +203,18 @@ function Task:__initTensors()
             local outs = v.size
             if self.targetAtTheEnd then                        -- vector targets
                self.trainTargetsBatch[k] = torch.Tensor(1, bs, outs)
-               self.testTargetsBatch[k] = torch.Tensor(1, bs, outs)
+               self.testTargetsBatch[k]  = torch.Tensor(1, bs, outs)
             else
                self.trainTargetsBatch[k] = torch.Tensor(trl, bs, outs)
-               self.testTargetsBatch[k] = torch.Tensor(tsl, bs, outs)
+               self.testTargetsBatch[k]  = torch.Tensor(tsl, bs, outs)
             end
          elseif v.type == "one-hot" then
             if self.targetAtTheEnd then                         -- class targets
                self.trainTargetsBatch[k] = torch.Tensor(1, bs)
-               self.testTargetsBatch[k] = torch.Tensor(1, bs)
+               self.testTargetsBatch[k]  = torch.Tensor(1, bs)
             else
                self.trainTargetsBatch[k] = torch.Tensor(trl, bs)
-               self.testTargetsBatch[k] = torch.Tensor(tsl, bs)
+               self.testTargetsBatch[k]  = torch.Tensor(tsl, bs)
             end
          else
             assert(false, "Unknown output type")
@@ -203,7 +222,7 @@ function Task:__initTensors()
 
         if not (self.targetAtTheEnd or self.targetAtEachStep) then     -- flags
             self.trainTargetFlagsBatch[k] = torch.ByteTensor(trl, bs)
-            self.testTargetFlagsBatch[k] = torch.ByteTensor(tsl, bs)
+            self.testTargetFlagsBatch[k]  = torch.ByteTensor(tsl, bs)
          end
       end
 
@@ -214,7 +233,7 @@ function Task:__initTensors()
 
    end
 
-   self:message("Initialized tensors.")
+   self:print("Initialized tensors.")
 end
 
 function Task:__initCriterions()
@@ -250,7 +269,7 @@ function Task:updateBatch(split)
       else
          if self.trainIdx + self.batchSize > self.trainSize + 1 then
             self.trainIdx = 1
-            self:message("Restarting training set.")
+            self:print("Restarting training set.")
          end
 
          local i = self.trainIdx
@@ -290,7 +309,7 @@ function Task:updateBatch(split)
       else
          if self.testIdx + self.batchSize > self.testSize + 1 then
             self.testIdx = 1
-            self:message("Restarting test set.")
+            self:print("Restarting test set.")
          end
 
          local i = self.testIdx
@@ -348,14 +367,14 @@ function Task:resetIndex(split)
 end
 
 function Task:getInputsInfo()
-   if not self.noAsserts then
+   if not self.noAssertions then
       assert(self.inputsInfo ~= nil, "Missing inputs info.")
    end
    return self.inputsInfo
 end
 
 function Task:getOutputsInfo()
-   if not self.noAsserts then
+   if not self.noAssertions then
       assert(self.outputsInfo ~= nil, "Missing outputs info.")
    end
    return self.outputsInfo
@@ -387,29 +406,45 @@ end
 
 
 function Task:evaluateBatch(output, targets, err)
+
+   -- output should be in the same form as targets
+
+   -----------------------------------------------------------------------------
+   -- Functon to transform real values to binary values
+
    local threshold = self.negative + (self.positive - self.negative) / 2
    local toBinary = function(x)
       if x >= threshold then return 1 else return 0 end
    end
+
    err = err or {}
-   if not self.noAsserts then
+   if not self.noAssertions then
       for k, v in pairs(self.outputsInfo) do
          assert(output[k] ~= nil and targets[k] ~= nil, k .. " output missing.")
       end
    end
+
    for k, v in pairs(self.outputsInfo) do              -- go through all outputs
+
       err[k] = err[k] or {}
+
       local errInfo = err[k]
+
       if v.type == "regression" then
+
          errInfo.loss = (errInfo.loss or 0) +
             self.criterions[1]:forward(output[k], targets[k])
+
       elseif v.type == "one-hot" then
+
          local T = targets[k]
          local O = output[k]
          local _, Y = O:max(2)
-         if not self.noAsserts then
+
+         if not self.noAssertions then
             assert(T:size(1) == Y:size(1), "output size very bad!")
          end
+
          errInfo.correct = (errInfo.correct or 0) + Y:eq(T):sum()
          errInfo.n = (errInfo.n or 0) + Y:nElement()
          errInfo.loss = (errInfo.loss or 0) + self.criterions[k]:forward(O, T)
@@ -418,15 +453,20 @@ function Task:evaluateBatch(output, targets, err)
          for i = 1, Y:size(1) do
             errInfo.confMatrix[{{T[i]},{Y[i]}}]:add(1)
          end
+
       elseif v.type == "binary" then
+
          local O = output[k]:clone():apply(toBinary)
-         local T = labels[k]:clone():apply(toBinary)
+         local T = targets[k]:clone():apply(toBinary)
+
          errInfo.correct = (errInfo.correct or 0) + O:eq(T):sum()
          errInfo.n = (errInfo.n or 0) + O:nElement()
          errInfo.loss = (errInfo.loss or 0) + self.criterions[k]:forward(O, T)
+
       else
          assert(false, "Unknown output type")
       end
+
    end
    return err
 end
@@ -496,7 +536,7 @@ function Task:cuda()
    end
 
    self.onCuda = true
-   self:message("Moved to GPU using CUDA.")
+   self:print("Moved to GPU using CUDA.")
 end
 
 --------------------------------------------------------------------------------
@@ -549,7 +589,7 @@ function Task:displayCurrentBatch(split, zoom)
       end
    end
 
-   if not self.noAsserts then
+   if not self.noAssertions then
       assert((start - 1) == (iSize * bs), "This is strange...")
    end
 
@@ -580,7 +620,7 @@ function Task:displayCurrentBatch(split, zoom)
       end
    end
 
-   if not self.noAsserts then
+   if not self.noAssertions then
       assert((start - 1) == (oSize * bs), "This is strange...")
    end
 
@@ -616,7 +656,7 @@ function Task:printCurrentBatch(split)
       assert(false, "unknown split: " .. split)
    end
 
-   self:message("Printing batch")
+   self:print("Printing batch")
    for i = 1, bs do
       print("Example " .. i)
       print("Inputs:")
@@ -632,17 +672,13 @@ function Task:printCurrentBatch(split)
          end
       end
    end
-   self:message("---DONE")
+   self:print("---DONE")
 end
 
 --------------------------------------------------------------------------------
 -- Function to be used when being verbose
 --------------------------------------------------------------------------------
 
-function Task:message(m)
-   local name = self.name or "TASK"
-   if self.verbose then
-      print(string.format("[" .. name .. "] "):color("green") ..
-               string.format(m):color("blue"))
-   end
+function Task:print(...)
+   print(self.name or "TASK", ...)
 end
