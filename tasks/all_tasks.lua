@@ -3,11 +3,11 @@ require("tasks.task")
 local __allTasks = {
    ["CopyFirst"]         =  "tasks.copy_first",
    ["Copy"]              =  "tasks.copy",
-   ["DoomClock"]         =  "tasks.doom_clock",
-   ["Indexing"]          =  "tasks.indexing",
-   ["GetNext"]           =  "tasks.get_next",
-   ["BinarySum"]         =  "tasks.binary_sum",
-   ["SubtractOnSignal"]  =  "tasks.subtract_on_signal"
+ --  ["DoomClock"]         =  "tasks.doom_clock",
+ --  ["Indexing"]          =  "tasks.indexing",
+ --  ["GetNext"]           =  "tasks.get_next",
+ --  ["BinarySum"]         =  "tasks.binary_sum",
+ --  ["SubtractOnSignal"]  =  "tasks.subtract_on_signal"
 }
 
 function allTasks()
