@@ -63,14 +63,14 @@ for _, taskName in pairs(tasks) do                             -- take each task
    for k, v in pairs(task:getInputsInfo()) do
       inSize = inSize + v.size
    end
-   local inLayer = nn.LSTM(inSize, 10)
-   local outLayer = {}
-   for k, v in pairs(task:getOutputsInfo()) do
-      --outSize = outSize + v.size
-      outLayer[k] = nn.LSTM(10, v.size)(inLayer)
+   local model = nn.Sequential():add(nn.LSTM(inSize, 10)) -- hopefully this does the trick
+   local concatL = nn.Concat(1)
+   local outputInfo = task:getOutputsInfo()
+   for k, v in pairs(outputInfo) do
+      outSize = outSize + v.size
+      concatL:add(nn.LSTM(10, v.size))
    end
-   local model = nn.gModule(outLayer)
-   --local model = nn.Sequential():add(nn.LSTM(inSize, outSize)) -- hopefully this does the trick
+   model:add(concatL)
    local criterion = GenericCriterion(task, opts)  -- create a generic criterion
 
    task:resetIndex("train")
@@ -81,43 +81,44 @@ for _, taskName in pairs(tasks) do                             -- take each task
    while not task:isEpochOver() or (opts.onTheFly and i < 100) do
 
       X, T, F, L = task:updateBatch()
+      -- to consider if concatenating input ok approach
       for i = 2, #X do
-      	X[1] = torch.cat(X[1],X[i])
+         X[1] = torch.cat(X[1],X[i])
       end
       Xt = X[1]
-      -- warning: I'm concatenating different types of outputs
-      --for i = 2, #T do
-      --	T[1] = torch.cat(T[1],T[i])
-      --end
-      Tt = T[1]
 
-	  --for k,Xt in pairs(X) do
-	  	--print(T[k]:size())
-         for i = 1,L[1] do
-            local Yt = model:forward(Xt[i])
+      for bt = 1,Xt:size()[2] do -- for every batch
+         for i = 1,L[1] do -- for every elem in sequence
+            local Y = model:forward(Xt[i][bt])
 
-         if task:hasTargetAtEachStep() then
-         --   for k,v in pairs(T) do Tt[k] = v[step] end
-            print(Yt)
-            print(Tt[i])
-            local loss = criterion:forward({Yt}, {Tt[i]})
-            local dYt = criterion:backward({Yt}, {Tt[i]})
-            model:backward(Xt[i], dYt[1])
-            print("Error",dYt[1]:sum())
-         else
-            local loss = criterion:forward({Yt}, {Tt[1]})
-            local dYt = criterion:backward({Yt}, {Tt[1]})
-            model:backward(Xt[i], dYt[1])
-            print("Error",dYt[1]:sum())
+            if task:hasTargetAtEachStep() then
+               Tt = {}
+               Yt = {}
+               for k,v in pairs(T) do
+                  Tt[k] = v[i][bt]
+               end
+               j = 1
+               for k,v in pairs(outputInfo) do
+                  l = v.size
+                  Yt[k] = Y:narrow(1, j, l)
+                  j = j + l
+               end
+               local loss = criterion:forward(Yt, Tt)
+               local dYt = criterion:backward(Yt, Tt)
+               for i = 2, #dYt do
+                  dYt[1] = torch.cat(dYt[1],dYt[i])
+               end
+               model:backward(Xt[i][bt], dYt[1])
+               print("Error",dYt[1]:sum())
+            end
+            if task:hasTargetAtTheEnd() and step == length then
+               local loss = criterion:forward({Y}, {T[1][1][bt]})
+               local dYt = criterion:backward({Y}, {T[1][1][bt]})
+               model:backward(Xt[i][bt], dYt[1])
+               print("Error",dYt[1]:sum())
+            end
          end
-
-         --[[if task:hasTargetAtTheEnd() and step == length then
-            for k,v in pairs(T) do Tt[k] = v[1] end
-            local loss = criterion:forward(Yt, Tt)
-            local dYt = criterion:backward(Yt, Tt)
-            model:backward(Xt, dYt)--]]
-         end
-       --end
+      end
 
       --task:displayCurrentBatch()
 
