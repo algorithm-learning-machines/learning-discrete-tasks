@@ -14,6 +14,26 @@ end
 
 --print = myPrint
 
+local function plot(series, tpause)
+   local gp = io.popen("gnuplot", 'w')
+
+   local lines = { }
+   for k,v in pairs(series) do
+      table.insert(lines, string.format(" '-' u 1:2 title '%s'", k))
+   end
+   
+   gp:write("plot" .. table.concat(lines, ",") .. " with linespoints\n")
+   for k,v in pairs(series) do
+      for i=1,#v do
+    gp:write(string.format("%f %f\n", i, v[i]))
+      end
+      gp:write("e\n")
+   end
+
+   gp:write(string.format("pause %f\n", tpause or 100.0))
+   gp:close()
+end
+
 
 require 'rnn'
 local createDumbModel = require("models.dumb_model")
@@ -37,8 +57,8 @@ opts.trainMaxLength = 10
 opts.testMaxLength = 20
 opts.fixedLength = false
 opts.onTheFly = false
-opts.trainSize = 100
-opts.testSize = 100
+opts.trainSize = 1500
+opts.testSize = 90
 opts.verbose = true
 
 -- Task specific options
@@ -63,12 +83,13 @@ for _, taskName in pairs(tasks) do                             -- take each task
    for k, v in pairs(task:getInputsInfo()) do
       inSize = inSize + v.size
    end
-   local model = nn.Sequential():add(nn.LSTM(inSize, 10)) -- hopefully this does the trick
+   local model = nn.Sequential():add(nn.GRU(inSize, 10)) -- hopefully this does the trick
+   --model:add(nn.LSTM(10,10))
    local concatL = nn.Concat(1)
    local outputInfo = task:getOutputsInfo()
    for k, v in pairs(outputInfo) do
       outSize = outSize + v.size
-      concatL:add(nn.LSTM(10, v.size))
+      concatL:add(nn.GRU(10, v.size))
    end
    model:add(concatL)
    local criterion = GenericCriterion(task, opts)  -- create a generic criterion
@@ -77,6 +98,7 @@ for _, taskName in pairs(tasks) do                             -- take each task
 
    local i = 0
    local err = {}
+   --err['error'] = {}
 
    while not task:isEpochOver() or (opts.onTheFly and i < 100) do
 
@@ -86,6 +108,7 @@ for _, taskName in pairs(tasks) do                             -- take each task
          X[1] = torch.cat(X[1],X[i])
       end
       Xt = X[1]
+      e = 0
 
       for bt = 1,Xt:size()[2] do -- for every batch
          for i = 1,L[1] do -- for every elem in sequence
@@ -108,23 +131,85 @@ for _, taskName in pairs(tasks) do                             -- take each task
                for i = 2, #dYt do
                   dYt[1] = torch.cat(dYt[1],dYt[i])
                end
+               model:zeroGradParameters()
                model:backward(Xt[i][bt], dYt[1])
-               print("Error",dYt[1]:sum())
+               model:updateParameters(0.01)--learning rate
+               model:maxParamNorm(2)
+               --print(dYt[1]:sum())
+               e = e + dYt[1]:abs():sum()
             end
             if task:hasTargetAtTheEnd() and step == length then
                local loss = criterion:forward({Y}, {T[1][1][bt]})
                local dYt = criterion:backward({Y}, {T[1][1][bt]})
+               model:zeroGradParameters()
                model:backward(Xt[i][bt], dYt[1])
-               print("Error",dYt[1]:sum())
+               model:updateParameters(0.01)--learning rate
+               model:maxParamNorm(2)
+               --print(dYt[1]:sum())
+               e = e + dYt[1]:abs():sum()
             end
          end
       end
 
       --task:displayCurrentBatch()
 
-      sys.sleep(0.02)
+      --sys.sleep(0.02)
       i = i + 1
+      --err["error"][i] = e
+      print(e)
    end
+   --plot(err)
+
+   ---[[ Testing
+   task:resetIndex("test")
+   print("Testing...")
+   accurracy = 0
+   accn = 0
+   while not task:isEpochOver("test") or (opts.onTheFly and i > 0) do
+
+      X, T, F, L = task:updateBatch("test")
+      -- to consider if concatenating input ok approach
+      for i = 2, #X do
+         X[1] = torch.cat(X[1],X[i])
+      end
+      Xt = X[1]
+
+      for bt = 1,Xt:size()[2] do -- for every batch
+         for i = 1,L[1] do -- for every elem in sequence
+            local Y = model:forward(Xt[i][bt])
+
+            if task:hasTargetAtEachStep() then
+               Tt = {}
+               Yt = {}
+               for k,v in pairs(T) do
+                  Tt[k] = v[i][bt]
+               end
+               j = 1
+               for k,v in pairs(outputInfo) do
+                  l = v.size
+                  Yt[k] = Y:narrow(1, j, l)
+                  j = j + l
+               end
+               evaluation = task:evaluateBatch(Yt, Tt)[1]
+               accurracy = accurracy + evaluation.correct/evaluation.n
+               accn = accn + 1
+            end
+            if task:hasTargetAtTheEnd() and step == length then
+               local loss = criterion:forward({Y}, {T[1][1][bt]})
+               local dYt = criterion:backward({Y}, {T[1][1][bt]})
+               evaluation = task:evaluateBatch({Y}, {T[1][1][bt]})[1]
+               accurracy = accurracy + evaluation.correct/evaluation.n
+               accn = accn + 1
+            end
+         end
+      end
+
+      --task:displayCurrentBatch()
+
+      --sys.sleep(0.02)
+      --i = i - 1
+   end--]]
+   print(accurracy/accn)
 
    -----------------------------------------------------------------------------
    -- Let's try on cuda now for the test data set
