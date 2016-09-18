@@ -136,7 +136,7 @@ function Task:__initTensors()
 
          if not (self.targetAtTheEnd or self.targetAtEachStep) then     -- flags
             self.trainTargetFlags[k] = torch.ByteTensor(trl, trs)
-            self.trainTargetFlags[k] = torch.ByteTensor(tsl, tss)
+            self.testTargetFlags[k] = torch.ByteTensor(tsl, tss)
          end
 
       end
@@ -433,7 +433,7 @@ function Task:evaluateBatch(output, targets, err)
       if v.type == "regression" then
 
          errInfo.loss = (errInfo.loss or 0) +
-            self.criterions[1]:forward(output[k], targets[k])
+            self.criterions[k]:forward(output[k], targets[k])
 
       elseif v.type == "one-hot" then
 
