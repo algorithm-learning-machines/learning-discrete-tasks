@@ -15,7 +15,7 @@ function Copy:__init(opt)
 
    Parent.__init(self, opt)
 
-   self.vectorSize = opt.vectorSize
+   self.vectorSize = opt.vectorSize or 10
    self.mean = opt.mean or 0.5
 
    self.inputsInfo = {{["size"] = self.vectorSize}}
