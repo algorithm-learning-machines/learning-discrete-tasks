@@ -40,6 +40,8 @@ function Task:__init(opts)
    self.verbose      = opts.verbose or false
    self.noAssertions = opts.noAssertions or false
 
+   self.flatInputs = opts.flatInputs == nil or opts.flatInputs
+
    self.onTheFly = opts.onTheFly or false
 
    self.trainMaxLength = opts.trainMaxLength or 20
@@ -76,161 +78,337 @@ function Task:__initTensors()
    local trl = self.trainMaxLength
    local tsl = self.testMaxLength
 
-   self.trainInputsBatch      = {}
-   self.testInputsBatch       = {}
-   self.trainTargetsBatch     = {}
-   self.trainTargetFlagsBatch = {}
-   self.testTargetsBatch      = {}
-   self.testTargetFlagsBatch  = {}
+   if self.flatInputs then                              -- inputs are 1D vectors
 
-   if not self.onTheFly then
-
-      --------------------------------------------------------------------------
-      -- Tensors for train and test data sets
-
-      local trs = self.trainSize
-      local tss = self.testSize
-
-      self.trainInputs = {}
-      self.testInputs = {}
-
-      for k, v in pairs(self.inputsInfo) do
-         local ins = v.size                               -- size of each output
-         self.trainInputs[k] = torch.Tensor(trl, trs, ins)       -- train inputs
-         self.testInputs[k]  = torch.Tensor(tsl, tss, ins)        -- test inputs
+      self.unflattener = nn.Concat()
+      local start = 0
+      for _, v in pairs(self.outputsInfo) do
+         self.unflattener:add(nn.Narrow(1, start, v.size))
+         start = start + v.size
       end
 
-      self.trainTargets     = {}
-      self.trainTargetFlags = {}
-      self.testTargets      = {}
-      self.testTargetFlags  = {}
 
-      for k, v in pairs(self.outputsInfo) do
+      local totalInSize = 0
+      for _, v in pairs(self.inputsInfo) do
+         totalInSize = totalInSize + v.size                -- size of each input
+      end
+      self.totalInSize = totalInSize
 
+      local totalOutSize = 0
+      local totalTargetSize = 0
+      for _, v in pairs(self.outputsInfo) do
+         totalOutSize = totalOutSize + v.size
          if v.type == "regression" or v.type == "binary" then
-
-            local outs = v.size
-            if self.targetAtTheEnd then                        -- vector targets
-               self.trainTargets[k] = torch.Tensor(1, trs, outs)
-               self.testTargets[k]  = torch.Tensor(1, tss, outs)
-            else
-               self.trainTargets[k] = torch.Tensor(trl, trs, outs)
-               self.testTargets[k]  = torch.Tensor(tsl, tss, outs)
-            end
-
+            totalTargetSize = totalTargetSize + v.size    -- size of each output
          elseif v.type == "one-hot" then
-
-            if self.targetAtTheEnd then                         -- class targets
-               self.trainTargets[k] = torch.Tensor(1, trs)
-               self.testTargets[k]  = torch.Tensor(1, tss)
-            else
-               self.trainTargets[k] = torch.Tensor(trl, trs)
-               self.testTargets[k]  = torch.Tensor(tsl, tss)
-            end
-
+            totalTargetSize = totalTargetSize + 1
          else
-
             assert(false, "Unknown output type")
-
          end
-
-         if not (self.targetAtTheEnd or self.targetAtEachStep) then     -- flags
-            self.trainTargetFlags[k] = torch.ByteTensor(trl, trs)
-            self.testTargetFlags[k] = torch.ByteTensor(tsl, tss)
-         end
-
       end
+      self.totalOutSize = totalOutSize
+      self.totalTargetSize = totalTargetSize
 
-      if not self.fixedLength then                                    -- lengths
-         self.trainLengths = torch.LongTensor(trs)
-         self.testLengths  = torch.LongTensor(tss)
-      end
+      self.trainTargetsBatch     = {}
+      self.trainTargetFlagsBatch = {}
+      self.testTargetsBatch      = {}
+      self.testTargetFlagsBatch  = {}
 
-      for i = 1, (trs / bs) do
-         local start = (i-1) * bs + 1
-         local X, T, F = {}, {}, {}
-         for k, _ in pairs(self.inputsInfo) do
-            X[k] = self.trainInputs[k]:narrow(2, start, bs)
-         end
-         for k, _ in pairs(self.outputsInfo) do
-            T[k] = self.trainTargets[k]:narrow(2, start, bs)
-            if self.trainTargetFlagsBatch[k] then
-               F[k] = self.trainTargetFlags[k]:narrow(2, start, bs)
-            end
-         end
-         local L
-         if self.trainLengths then
-            L = self.trainLengths:narrow(1, start, bs)
-         end
-         self:__generateBatch(X, T, F, L, true)
-      end
 
-      for i = 1, (tss / bs) do
-         local start = (i-1) * bs + 1
-         local X, T, F = {}, {}, {}
-         for k, v in pairs(self.inputsInfo) do
-            X[k] = self.testInputs[k]:narrow(2, start, bs)
-         end
+      if not self.onTheFly then
+
+         -----------------------------------------------------------------------
+         -- Tensors for train and test data sets
+
+         local trs = self.trainSize
+         local tss = self.testSize
+
+         self.trainInputs = torch.Tensor(trl, trs, totalInSize)  -- train inputs
+         self.testInputs  = torch.Tensor(tsl, tss, totalInSize)   -- test inputs
+
+         self.trainTargets     = {}
+         self.trainTargetFlags = {}
+         self.testTargets      = {}
+         self.testTargetFlags  = {}
+
          for k, v in pairs(self.outputsInfo) do
-            T[k] = self.testTargets[k]:narrow(2, start, bs)
-            if self.testTargetFlagsBatch[k] then
-               F[k] = self.testTargetFlags[k]:narrow(2, start, bs)
-            end
-         end
-         local L
-         if self.testLengths then
-            L = self.testLengths:narrow(1, start, bs)
-         end
-         self:__generateBatch(X, T, F, L, false)
-      end
 
+            if v.type == "regression" or v.type == "binary" then
 
-      self:print("Created a " .. self.trainSize .. " train set.")
-      self:print("Created a " .. self.testSize .. " test set.")
+               local outs = v.size
+               if self.targetAtTheEnd then                     -- vector targets
+                  self.trainTargets[k] = torch.Tensor(1, trs, outs)
+                  self.testTargets[k]  = torch.Tensor(1, tss, outs)
+               else
+                  self.trainTargets[k] = torch.Tensor(trl, trs, outs)
+                  self.testTargets[k]  = torch.Tensor(tsl, tss, outs)
+               end
 
-   else  -- batches will be generated on the fly
+            elseif v.type == "one-hot" then
 
-      --------------------------------------------------------------------------
-      -- Tensors for train and test batches
+               if self.targetAtTheEnd then                      -- class targets
+                  self.trainTargets[k] = torch.Tensor(1, trs)
+                  self.testTargets[k]  = torch.Tensor(1, tss)
+               else
+                  self.trainTargets[k] = torch.Tensor(trl, trs)
+                  self.testTargets[k]  = torch.Tensor(tsl, tss)
+               end
 
-      for k, v in pairs(self.inputsInfo) do
-         self.trainInputsBatch[k] = torch.Tensor(trl, bs, v.size)
-         self.testInputsBatch[k]  = torch.Tensor(tsl, bs, v.size)
-      end
-
-      for k, v in pairs(self.outputsInfo) do
-         if v.type == "regression" or v.type == "binary" then
-            local outs = v.size
-            if self.targetAtTheEnd then                        -- vector targets
-               self.trainTargetsBatch[k] = torch.Tensor(1, bs, outs)
-               self.testTargetsBatch[k]  = torch.Tensor(1, bs, outs)
             else
-               self.trainTargetsBatch[k] = torch.Tensor(trl, bs, outs)
-               self.testTargetsBatch[k]  = torch.Tensor(tsl, bs, outs)
+
+               assert(false, "Unknown output type")
+
             end
-         elseif v.type == "one-hot" then
-            if self.targetAtTheEnd then                         -- class targets
-               self.trainTargetsBatch[k] = torch.Tensor(1, bs)
-               self.testTargetsBatch[k]  = torch.Tensor(1, bs)
+
+            if not (self.targetAtTheEnd or self.targetAtEachStep) then  -- flags
+               self.trainTargetFlags[k] = torch.ByteTensor(trl, trs)
+               self.testTargetFlags[k] = torch.ByteTensor(tsl, tss)
+            end
+
+         end
+
+         if not self.fixedLength then                                 -- lengths
+            self.trainLengths = torch.LongTensor(trs)
+            self.testLengths  = torch.LongTensor(tss)
+         end
+
+         for i = 1, (trs / bs) do
+            local start = (i-1) * bs + 1
+            local X = self.trainInputs:narrow(2, start, bs)
+            local T, F = {}, {}
+            for k, _ in pairs(self.outputsInfo) do
+               T[k] = self.trainTargets[k]:narrow(2, start, bs)
+               if self.trainTargetFlagsBatch[k] then
+                  F[k] = self.trainTargetFlags[k]:narrow(2, start, bs)
+               end
+            end
+            local L
+            if self.trainLengths then
+               L = self.trainLengths:narrow(1, start, bs)
+            end
+            self:__generateBatch(X, T, F, L, true)
+         end
+
+         for i = 1, (tss / bs) do
+            local start = (i-1) * bs + 1
+            local X = self.testInputs:narrow(2, start, bs)
+            local T, F = {}, {}
+            for k, v in pairs(self.outputsInfo) do
+               T[k] = self.testTargets[k]:narrow(2, start, bs)
+               if self.testTargetFlagsBatch[k] then
+                  F[k] = self.testTargetFlags[k]:narrow(2, start, bs)
+               end
+            end
+            local L
+            if self.testLengths then
+               L = self.testLengths:narrow(1, start, bs)
+            end
+            self:__generateBatch(X, T, F, L, false)
+         end
+
+         self:print("Created a " .. self.trainSize .. " train set.")
+         self:print("Created a " .. self.testSize .. " test set.")
+
+      else  -- batches will be generated on the fly
+
+        ------------------------------------------------------------------------
+         -- Tensors for train and test batches
+
+         self.trainInputsBatch = torch.Tensor(trl, bs, totalInSize)
+         self.testInputsBatch  = torch.Tensor(tsl, bs, totalInSize)
+
+         for k, v in pairs(self.outputsInfo) do
+            if v.type == "regression" or v.type == "binary" then
+               local outs = v.size
+               if self.targetAtTheEnd then                     -- vector targets
+                  self.trainTargetsBatch[k] = torch.Tensor(1, bs, outs)
+                  self.testTargetsBatch[k]  = torch.Tensor(1, bs, outs)
+               else
+                  self.trainTargetsBatch[k] = torch.Tensor(trl, bs, outs)
+                  self.testTargetsBatch[k]  = torch.Tensor(tsl, bs, outs)
+               end
+            elseif v.type == "one-hot" then
+               if self.targetAtTheEnd then                      -- class targets
+                  self.trainTargetsBatch[k] = torch.Tensor(1, bs)
+                  self.testTargetsBatch[k]  = torch.Tensor(1, bs)
+               else
+                  self.trainTargetsBatch[k] = torch.Tensor(trl, bs)
+                  self.testTargetsBatch[k]  = torch.Tensor(tsl, bs)
+               end
             else
-               self.trainTargetsBatch[k] = torch.Tensor(trl, bs)
-               self.testTargetsBatch[k]  = torch.Tensor(tsl, bs)
+               assert(false, "Unknown output type")
             end
-         else
-            assert(false, "Unknown output type")
+
+            if not (self.targetAtTheEnd or self.targetAtEachStep) then  -- flags
+               self.trainTargetFlagsBatch[k] = torch.ByteTensor(trl, bs)
+               self.testTargetFlagsBatch[k]  = torch.ByteTensor(tsl, bs)
+            end
          end
 
-        if not (self.targetAtTheEnd or self.targetAtEachStep) then     -- flags
-            self.trainTargetFlagsBatch[k] = torch.ByteTensor(trl, bs)
-            self.testTargetFlagsBatch[k]  = torch.ByteTensor(tsl, bs)
+         if not self.fixedLength then                                 -- lengths
+            self.trainLengthsBatch = torch.LongTensor(bs)
+            self.testLengthsBatch = torch.LongTensor(bs)
          end
+
       end
 
-      if not self.fixedLength then                                    -- lengths
-         self.trainLengthsBatch = torch.LongTensor(bs)
-         self.testLengthsBatch = torch.LongTensor(bs)
-      end
+   else
 
+      self.trainInputsBatch      = {}
+      self.testInputsBatch       = {}
+      self.trainTargetsBatch     = {}
+      self.trainTargetFlagsBatch = {}
+      self.testTargetsBatch      = {}
+      self.testTargetFlagsBatch  = {}
+
+      if not self.onTheFly then
+
+         -----------------------------------------------------------------------
+         -- Tensors for train and test data sets
+
+         local trs = self.trainSize
+         local tss = self.testSize
+
+         self.trainInputs = {}
+         self.testInputs = {}
+
+         for k, v in pairs(self.inputsInfo) do
+            local ins = v.size                            -- size of each output
+            self.trainInputs[k] = torch.Tensor(trl, trs, ins)    -- train inputs
+            self.testInputs[k]  = torch.Tensor(tsl, tss, ins)     -- test inputs
+         end
+
+         self.trainTargets     = {}
+         self.trainTargetFlags = {}
+         self.testTargets      = {}
+         self.testTargetFlags  = {}
+
+         for k, v in pairs(self.outputsInfo) do
+
+            if v.type == "regression" or v.type == "binary" then
+
+               local outs = v.size
+               if self.targetAtTheEnd then                     -- vector targets
+                  self.trainTargets[k] = torch.Tensor(1, trs, outs)
+                  self.testTargets[k]  = torch.Tensor(1, tss, outs)
+               else
+                  self.trainTargets[k] = torch.Tensor(trl, trs, outs)
+                  self.testTargets[k]  = torch.Tensor(tsl, tss, outs)
+               end
+
+            elseif v.type == "one-hot" then
+
+               if self.targetAtTheEnd then                      -- class targets
+                  self.trainTargets[k] = torch.Tensor(1, trs)
+                  self.testTargets[k]  = torch.Tensor(1, tss)
+               else
+                  self.trainTargets[k] = torch.Tensor(trl, trs)
+                  self.testTargets[k]  = torch.Tensor(tsl, tss)
+               end
+
+            else
+
+               assert(false, "Unknown output type")
+
+            end
+
+            if not (self.targetAtTheEnd or self.targetAtEachStep) then  -- flags
+               self.trainTargetFlags[k] = torch.ByteTensor(trl, trs)
+               self.testTargetFlags[k] = torch.ByteTensor(tsl, tss)
+            end
+
+         end
+
+         if not self.fixedLength then                                 -- lengths
+            self.trainLengths = torch.LongTensor(trs)
+            self.testLengths  = torch.LongTensor(tss)
+         end
+
+         for i = 1, (trs / bs) do
+            local start = (i-1) * bs + 1
+            local X, T, F = {}, {}, {}
+            for k, _ in pairs(self.inputsInfo) do
+               X[k] = self.trainInputs[k]:narrow(2, start, bs)
+            end
+            for k, _ in pairs(self.outputsInfo) do
+               T[k] = self.trainTargets[k]:narrow(2, start, bs)
+               if self.trainTargetFlagsBatch[k] then
+                  F[k] = self.trainTargetFlags[k]:narrow(2, start, bs)
+               end
+            end
+            local L
+            if self.trainLengths then
+               L = self.trainLengths:narrow(1, start, bs)
+            end
+            self:__generateBatch(X, T, F, L, true)
+         end
+
+         for i = 1, (tss / bs) do
+            local start = (i-1) * bs + 1
+            local X, T, F = {}, {}, {}
+            for k, v in pairs(self.inputsInfo) do
+               X[k] = self.testInputs[k]:narrow(2, start, bs)
+            end
+            for k, v in pairs(self.outputsInfo) do
+               T[k] = self.testTargets[k]:narrow(2, start, bs)
+               if self.testTargetFlagsBatch[k] then
+                  F[k] = self.testTargetFlags[k]:narrow(2, start, bs)
+               end
+            end
+            local L
+            if self.testLengths then
+               L = self.testLengths:narrow(1, start, bs)
+            end
+            self:__generateBatch(X, T, F, L, false)
+         end
+
+         self:print("Created a " .. self.trainSize .. " train set.")
+         self:print("Created a " .. self.testSize .. " test set.")
+
+      else  -- batches will be generated on the fly
+
+        ------------------------------------------------------------------------
+         -- Tensors for train and test batches
+
+         for k, v in pairs(self.inputsInfo) do
+            self.trainInputsBatch[k] = torch.Tensor(trl, bs, v.size)
+            self.testInputsBatch[k]  = torch.Tensor(tsl, bs, v.size)
+         end
+
+         for k, v in pairs(self.outputsInfo) do
+            if v.type == "regression" or v.type == "binary" then
+               local outs = v.size
+               if self.targetAtTheEnd then                     -- vector targets
+                  self.trainTargetsBatch[k] = torch.Tensor(1, bs, outs)
+                  self.testTargetsBatch[k]  = torch.Tensor(1, bs, outs)
+               else
+                  self.trainTargetsBatch[k] = torch.Tensor(trl, bs, outs)
+                  self.testTargetsBatch[k]  = torch.Tensor(tsl, bs, outs)
+               end
+            elseif v.type == "one-hot" then
+               if self.targetAtTheEnd then                      -- class targets
+                  self.trainTargetsBatch[k] = torch.Tensor(1, bs)
+                  self.testTargetsBatch[k]  = torch.Tensor(1, bs)
+               else
+                  self.trainTargetsBatch[k] = torch.Tensor(trl, bs)
+                  self.testTargetsBatch[k]  = torch.Tensor(tsl, bs)
+               end
+            else
+               assert(false, "Unknown output type")
+            end
+
+            if not (self.targetAtTheEnd or self.targetAtEachStep) then  -- flags
+               self.trainTargetFlagsBatch[k] = torch.ByteTensor(trl, bs)
+               self.testTargetFlagsBatch[k]  = torch.ByteTensor(tsl, bs)
+            end
+         end
+
+         if not self.fixedLength then                                 -- lengths
+            self.trainLengthsBatch = torch.LongTensor(bs)
+            self.testLengthsBatch = torch.LongTensor(bs)
+         end
+
+      end
    end
 
    self:print("Initialized tensors.")
@@ -275,9 +453,14 @@ function Task:updateBatch(split)
          local i = self.trainIdx
          local bs = self.batchSize
 
-         for k, _ in pairs(self.inputsInfo) do
-            self.trainInputsBatch[k] = self.trainInputs[k]:narrow(2, i, bs)
+         if self.flatInputs then
+            self.trainInputsBatch = self.trainInputs:narrow(2, i, bs)
+         else
+            for k, _ in pairs(self.inputsInfo) do
+               self.trainInputsBatch[k] = self.trainInputs[k]:narrow(2, i, bs)
+            end
          end
+
          for k, _ in pairs(self.outputsInfo) do
             self.trainTargetsBatch[k] = self.trainTargets[k]:narrow(2, i, bs)
             if not (self.targetAtEachStep or self.targetAtTheEnd) then
@@ -315,8 +498,12 @@ function Task:updateBatch(split)
          local i = self.testIdx
          local bs = self.batchSize
 
-         for k, _ in pairs(self.inputsInfo) do
-            self.testInputsBatch[k] = self.testInputs[k]:narrow(2, i, bs)
+         if self.flatInputs then
+            self.testInputsBatch = self.testInputs:narrow(2, i, bs)
+         else
+            for k, _ in pairs(self.inputsInfo) do
+               self.testInputsBatch[k] = self.testInputs[k]:narrow(2, i, bs)
+            end
          end
          for k, _ in pairs(self.outputsInfo) do
             self.testTargetsBatch[k] = self.testTargets[k]:narrow(2, i, bs)
@@ -404,8 +591,7 @@ end
 -- Function used to evaluate a given batch against the target values
 --------------------------------------------------------------------------------
 
-
-function Task:evaluateBatch(output, targets, err)
+function Task:evaluateBatch(_output, targets, err)
 
    -- output should be in the same form as targets
 
@@ -418,6 +604,14 @@ function Task:evaluateBatch(output, targets, err)
    end
 
    err = err or {}
+
+   local output
+   if self.flatInputs then
+      output = self.unflattener:forward(_output)
+   else
+      output = _output
+   end
+
    if not self.noAssertions then
       for k, v in pairs(self.outputsInfo) do
          assert(output[k] ~= nil and targets[k] ~= nil, k .. " output missing.")
@@ -468,6 +662,7 @@ function Task:evaluateBatch(output, targets, err)
       end
 
    end
+
    return err
 end
 
@@ -582,9 +777,16 @@ function Task:displayCurrentBatch(split, zoom)
    local start = 1
    for i = 1, bs do
       for k, v in pairs(self.inputsInfo) do
-         inputVals[{1+(i%2), {start,start+v.size-1},{}}]:copy(
-            inputBatch[k]:select(2,i):narrow(1,1,seqLength):t()
-                                                    )
+         if self.flatInputs then
+            inputVals[{1+(i%2), {start,start+v.size-1},{}}]:copy(
+               inputBatch:narrow(3, start, v.size)
+                  :select(2,i):narrow(1,1,seqLength):t()
+                                                                )
+         else
+            inputVals[{1+(i%2), {start,start+v.size-1},{}}]:copy(
+               inputBatch[k]:select(2,i):narrow(1,1,seqLength):t()
+                                                                )
+         end
          start = start + v.size
       end
    end
@@ -660,8 +862,12 @@ function Task:printCurrentBatch(split)
    for i = 1, bs do
       print("Example " .. i)
       print("Inputs:")
-      for k, v in pairs(self.inputsInfo) do
-         print(inputBatch[k]:select(2,i):t())
+      if self.flatInputs then
+         print(inputBatch:select(2,i):t())
+      else
+         for k, v in pairs(self.inputsInfo) do
+            print(inputBatch[k]:select(2,i):t())
+         end
       end
       print("Outputs:")
       for k, v in pairs(self.outputsInfo) do

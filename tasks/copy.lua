@@ -40,7 +40,13 @@ function Copy:__generateBatch(Xs, Ts, Fs, L, isTraining)
 
    local bs = self.batchSize
 
-   local X = Xs[1]
+   local X
+   if self.flatInputs then
+      X = Xs
+   else
+      X = Xs[1]
+   end
+
    local T = Ts[1]
    local F = Fs[1]
 
