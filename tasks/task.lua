@@ -80,10 +80,10 @@ function Task:__initTensors()
 
    if self.flatInputs then                              -- inputs are 1D vectors
 
-      self.unflattener = nn.Concat()
-      local start = 0
+      self.splitter = nn.ConcatTable()
+      local start = 1
       for _, v in pairs(self.outputsInfo) do
-         self.unflattener:add(nn.Narrow(1, start, v.size))
+         self.splitter:add(nn.Narrow(3, start, v.size))
          start = start + v.size 
       end
 
@@ -607,7 +607,7 @@ function Task:evaluateBatch(_output, targets, err)
 
    local output
    if self.flatInputs then
-      output = self.unflattener:forward(_output)
+      output = self.splitter:forward(_output)
    else
       output = _output
    end
