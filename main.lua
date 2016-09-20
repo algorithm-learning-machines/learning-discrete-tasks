@@ -21,6 +21,7 @@ for k,v in ipairs(tasks) do
       local seqLSTM = nn.Sequencer(nn.LSTM(t.totalInSize, t.totalOutSize))
       local out = seqLSTM:forward(X)
       local err = t:evaluateBatch(out, T)
+
    end
 end
 

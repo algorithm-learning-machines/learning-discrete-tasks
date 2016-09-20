@@ -81,7 +81,7 @@ function Task:__initTensors()
    if self.flatInputs then                              -- inputs are 1D vectors
 
       self.unflattener = nn.Concat()
-      local start = 0
+      local start = 1
       for _, v in pairs(self.outputsInfo) do
          self.unflattener:add(nn.Narrow(1, start, v.size))
          start = start + v.size 
@@ -607,6 +607,7 @@ function Task:evaluateBatch(_output, targets, err)
 
    local output
    if self.flatInputs then
+      print(self.unflattener)
       output = self.unflattener:forward(_output)
    else
       output = _output
