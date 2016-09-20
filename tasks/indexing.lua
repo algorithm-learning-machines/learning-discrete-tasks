@@ -49,7 +49,7 @@ function Indexing:__generateBatch(Xs, Ts, Fs, L, isTraining)
    local s = self.vectorSize
 
    if not self.noAsserts then
-      assert(X:nDimension() == 3)                          -- check that X is 3D
+      --assert(X:nDimension() == 3)                          -- check that X is 3D
       assert(X:size(1) == seqLength and X:size(2) == bs and X:size(3) == s)
       assert(N:nDimension() == 3)
       assert(N:size(1) == seqLength and N:size(2) == bs and N:size(3) == 1)

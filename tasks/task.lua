@@ -84,7 +84,7 @@ function Task:__initTensors()
       local start = 0
       for _, v in pairs(self.outputsInfo) do
          self.unflattener:add(nn.Narrow(1, start, v.size))
-         start = start + v.size
+         start = start + v.size 
       end
 
 
@@ -212,7 +212,7 @@ function Task:__initTensors()
       else  -- batches will be generated on the fly
 
         ------------------------------------------------------------------------
-         -- Tensors for train and test batches
+        -- Tensors for train and test batches
 
          self.trainInputsBatch = torch.Tensor(trl, bs, totalInSize)
          self.testInputsBatch  = torch.Tensor(tsl, bs, totalInSize)
@@ -368,7 +368,7 @@ function Task:__initTensors()
       else  -- batches will be generated on the fly
 
         ------------------------------------------------------------------------
-         -- Tensors for train and test batches
+        -- Tensors for train and test batches
 
          for k, v in pairs(self.inputsInfo) do
             self.trainInputsBatch[k] = torch.Tensor(trl, bs, v.size)
