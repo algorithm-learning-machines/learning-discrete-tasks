@@ -14,17 +14,13 @@ opts.fixedLength = true
 
 local tasks = allTasks()
 
-function feval()
-   
-end
-
-
 for k,v in ipairs(tasks) do
    if v == "Copy" then
       local t = getTask(v)()
 
       -- model to train
       local seqLSTM = nn.Sequencer(nn.LSTM(t.totalInSize, t.totalOutSize))
+      local X, T, F, L = t:updateBatch()
 
       while true do -- epoch
 

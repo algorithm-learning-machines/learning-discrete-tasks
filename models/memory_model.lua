@@ -121,7 +121,6 @@ function memoryModel.create(opt, addressReader, addressWriter, valueWriter)
    -- Next value calculator
    ----------------------------------------------------------------------------
 
-   -- TODO add custom value writer
    local VW = nn.GRU
    params = {inputSize + vectorSize, vectorSize, RNN_steps}
 
