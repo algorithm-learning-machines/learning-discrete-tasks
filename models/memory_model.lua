@@ -21,20 +21,40 @@ function memoryModel.create(opt, addressReader, addressWriter, valueWriter)
    end
    local dummyInput = nn.Identity()()
    local RNN_steps = 5 --TODO add command line param
+   local flatMemSize = memSize * vectorSize
 
-   ----------------------------------------------------------------------------
-   --  Initial Memory
-   ----------------------------------------------------------------------------
-   local initialMem = nn.Identity()()
-   ----------------------------------------------------------------------------
+   -----------------------------------------------------------------------------
+   -- All input is given as one flat Tensor, we shall split it with Narrow
+   -----------------------------------------------------------------------------
+   local allInput = nn.Identity()()
 
-   ----------------------------------------------------------------------------
+
+   local flatMem
+   local initialMem
+
+   if not opt.noInput then
+      --------------------------------------------------------------------------
+      -- Extract flattened memory
+      --------------------------------------------------------------------------
+      flatMem = nn.Narrow(2,1,flatMemSize)(allInput)
+   else
+      flatMem = allInput
+   end
+
+
+   -----------------------------------------------------------------------------
+   --  HACK: To avoid rewriting, left extra reshaper here for memory
+   -----------------------------------------------------------------------------
+   initialMem = nn.Reshape(memSize, vectorSize)(flatMem)
+   --------------------------------------------------------------------------
+
+
+   -----------------------------------------------------------------------------
    -- Input
    -----------------------------------------------------------------------------
    local input
-
    if not opt.noInput then
-      input = nn.Identity()()
+      input = nn.Narrow(2, flatMemSize + 1, inputSize)(allInput)
    end
    ----------------------------------------------------------------------------
   
@@ -87,16 +107,16 @@ function memoryModel.create(opt, addressReader, addressWriter, valueWriter)
          inputVal = reshapedValue
          inputAddr = address
       else
-         inputVal = nn.JoinTable(1)({input, reshapedValue})
-         inputAddr = nn.JoinTable(1)({input, address})
+         inputVal = nn.JoinTable(2)({input, reshapedValue})
+         inputAddr = nn.JoinTable(2)({input, address})
       end
    else                                          -- cross value and adress paths
       if not opt.noInput then                           -- TODO: invert if cases
-         local auxJoin = nn.JoinTable(1)({input, address})
-         inputVal = nn.JoinTable(1)({auxJoin, reshapedValue})
+         local auxJoin = nn.JoinTable(2)({input, address})
+         inputVal = nn.JoinTable(2)({auxJoin, reshapedValue})
          inputAddr = inputVal
       else
-         inputVal = nn.JoinTable(1)({address, reshapedValue})
+         inputVal = nn.JoinTable(2)({address, reshapedValue})
          inputAddr = inputVal
       end
    end
@@ -159,11 +179,11 @@ function memoryModel.create(opt, addressReader, addressWriter, valueWriter)
 
    in_dict = {}
    out_dict = {}
-   in_dict[#in_dict + 1] = initialMem
+   in_dict[#in_dict + 1] = allInput 
    out_dict[#out_dict + 1] = finMem
-   if not opt.noInput then -- add input to initial dict
-      in_dict[#in_dict + 1] = input
-   end
+   --if not opt.noInput then -- add input to initial dict
+      --in_dict[#in_dict + 1] = input
+   --end
    if addressReader then -- add back address to input
       in_dict[#in_dict + 1] = prevWriteAddress
       out_dict[#out_dict + 1] = addrCalc

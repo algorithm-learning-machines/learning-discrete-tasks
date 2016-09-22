@@ -19,7 +19,7 @@ function CustomModel()
    opt.vectorSize = 5 
    opt.inputSize = 10 
    opt.separateValAddr = true 
-   opt.noInput = false -- model receives input besides its memory 
+   opt.noInput = true 
    opt.noProb = true 
    opt.simplified = false 
    opt.supervised = false 
@@ -47,7 +47,7 @@ for k,v in ipairs(tasks) do
       
      
       local seqLSTM = nn.Sequencer(CustomModel())
-      X = torch.randn(2,1,35)
+      X = torch.randn(2,1,25)
       out = seqLSTM:forward(X)
       
    end
