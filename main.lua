@@ -35,10 +35,15 @@ function CustomModel()
    return Model.create(opt)
 end
 
-local useOurModel = false
+local cmd = torch.CmdLine() 
+cmd:text()
+cmd:option('-useOurModel', false, 'Use our custom model')
+cmd:text()
+
+local opts = cmd:parse(arg or {})
+
 
 local tasks = allTasks()
-
  
 
 for k,v in ipairs(tasks) do
@@ -47,7 +52,7 @@ for k,v in ipairs(tasks) do
 
       -- model to train
       local seqModel
-      if useOurModel then
+      if opts.useOurModel then
          -- desired usage: nn.CustomModel(t.totalInSize, t.totalOutSize)
          seqModel = nn.Sequencer(CustomModel())
       else
@@ -67,18 +72,22 @@ for k,v in ipairs(tasks) do
 
             while not t:isEpochOver() and train_count < 30 do 
                local X, T, F, L = t:updateBatch()
-               -- for the sake of seeing stuff work
-               if useOurModel then
-                  X = torch.randn(2,1,35)
-                  T = torch.randn(2,1,5,5)
+               local err, out
+               -- hardcoded case for the sake of seeing stuff running 
+               if opts.useOurModel then
+                  X = torch.randn(5,1,35)
+                  T = {torch.randn(5,1,10)}
+                  out = seqModel:forward(X):reshape(5,1,25):narrow(3,1,10)
+                  err = t:evaluateBatch(out, T) -- not working for custom model usage
+                  de = t.criterions[1]:backward(out, T[1])
+                  de = torch.cat(de, torch.Tensor(5,1,15))
+               else
+                  out = seqModel:forward(X)
+                  err = t:evaluateBatch(out, T) -- not working for custom model usage
+                  de = t.criterions[1]:backward(out, T[1])
                end
-
-               local out = seqModel:forward(X)
-               err = t:evaluateBatch(out, T) -- not working for custom model usage
-               de = t.criterions[1]:backward(out, T[1])
-
+               -- upper case should collapse to this as well in the end
                seqModel:backward(X, de)
-
                f = f + err[1].loss
                train_count = train_count + 1
             end
