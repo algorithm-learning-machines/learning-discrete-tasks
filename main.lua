@@ -10,7 +10,7 @@ require("header")
 require("tasks.all_tasks")
 
 require("models.memory_model")
-
+require("models.memory_model_wrapper")
 
 function CustomModel()
    local opt = {} 
@@ -20,6 +20,7 @@ function CustomModel()
    opt.inputSize = 10 
    opt.separateValAddr = true 
    opt.noInput = false -- model receives input besides its memory 
+   --opt.outputLine = true
    opt.noProb = true 
    opt.simplified = false 
    opt.supervised = false 
@@ -29,22 +30,57 @@ function CustomModel()
    opt.memorySize = 5
    opt.useCuda = false
 
-
-   ---- model to train
+   -- model to train
    Model = require("models.memory_model")
    return Model.create(opt)
 end
 
+
+function CustomModelWrapper(i, o)
+   local opt = {} 
+
+   opt.memOnly = true
+   opt.vectorSize = o 
+   opt.inputSize = i-- should be the same as vectorSize 
+   opt.separateValAddr = true 
+   opt.noInput = false -- model receives input besides its memory 
+   opt.outputLine = true
+   opt.noProb = true 
+   opt.simplified = false 
+   opt.supervised = false 
+   opt.probabilityDiscount = 0.99
+   opt.maxForwardSteps = 5
+   opt.batchSize = 2
+   opt.memorySize = 5 -- number of columns practically
+   opt.useCuda = false
+   model = memoryModelWrapper(opt)--= require("models.memory_model_wrapper")
+
+   -- model to train
+   return model 
+
+end
+
 local cmd = torch.CmdLine() 
 cmd:text()
-cmd:option('-useOurModel', false, 'Use our custom model')
+cmd:option('-useOurModel', true, 'Use our custom model')
 cmd:text()
 
 local opts = cmd:parse(arg or {})
 
 
 local tasks = allTasks()
- 
+
+local model = nn.Sequencer(CustomModelWrapper(10, 10))
+
+--local model = CustomModelWrapper(10,10)
+local fifi = model:forward(torch.Tensor(20,1,10))
+--print("main=================", tostring(fifi:size()))
+model:backward(torch.Tensor(20,1,10), torch.Tensor(20,1,10))
+--print("main", tostring(fifi))
+--print("main",tostring(model:backward(torch.Tensor(1,5), torch.Tensor(1,5))))
+--print("main", model:forward(torch.Tensor(1,10)))
+
+os.exit(0)
 
 for k,v in ipairs(tasks) do
    if v == "Copy" then
@@ -54,7 +90,7 @@ for k,v in ipairs(tasks) do
       local seqModel
       if opts.useOurModel then
          -- desired usage: nn.CustomModel(t.totalInSize, t.totalOutSize)
-         seqModel = nn.Sequencer(CustomModel())
+         seqModel = nn.Sequencer(CustomModelWrapper(t.totalInSize, t.totalOutSize))
       else
          seqModel = nn.Sequencer(nn.LSTM(t.totalInSize, t.totalOutSize))
       end
@@ -73,20 +109,16 @@ for k,v in ipairs(tasks) do
             while not t:isEpochOver() and train_count < 30 do 
                local X, T, F, L = t:updateBatch()
                local err, out
-               -- hardcoded case for the sake of seeing stuff running 
-               if opts.useOurModel then
-                  X = torch.randn(5,1,35)
-                  T = {torch.randn(5,1,10)}
-                  out = seqModel:forward(X):reshape(5,1,25):narrow(3,1,10)
-                  err = t:evaluateBatch(out, T) -- not working for custom model usage
-                  de = t.criterions[1]:backward(out, T[1])
-                  de = torch.cat(de, torch.Tensor(5,1,15))
-               else
-                  out = seqModel:forward(X)
-                  err = t:evaluateBatch(out, T) -- not working for custom model usage
-                  de = t.criterions[1]:backward(out, T[1])
-               end
+               
+               out = seqModel:forward(X)
+               err = t:evaluateBatch(out, T)
+               de = t.criterions[1]:backward(out, T[1])
                -- upper case should collapse to this as well in the end
+
+               --print("de", tostring(de:size()))
+               --print("X", tostring(X:size()))
+               --print("sizes", tostring(t.totalInSize).." "..tostring(t.totalOutSize))
+
                seqModel:backward(X, de)
                f = f + err[1].loss
                train_count = train_count + 1

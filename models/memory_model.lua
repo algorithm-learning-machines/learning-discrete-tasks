@@ -28,7 +28,6 @@ function memoryModel.create(opt, addressReader, addressWriter, valueWriter)
    -----------------------------------------------------------------------------
    local allInput = nn.Identity()()
 
-
    local flatMem
    local initialMem
 
@@ -181,14 +180,16 @@ function memoryModel.create(opt, addressReader, addressWriter, valueWriter)
    out_dict = {}
    in_dict[#in_dict + 1] = allInput 
    out_dict[#out_dict + 1] = finMem
-   --if not opt.noInput then -- add input to initial dict
-      --in_dict[#in_dict + 1] = input
-   --end
+
    if addressReader then -- add back address to input
       in_dict[#in_dict + 1] = prevWriteAddress
       out_dict[#out_dict + 1] = addrCalc
    end
-
+   
+   if opt.outputLine then
+      out_dict[#out_dict + 1] = valueCalc -- add an output line to the network
+   end
+   
    if opt.noProb then
       return nn.gModule(in_dict, out_dict)
    end

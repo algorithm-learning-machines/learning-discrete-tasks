@@ -1,14 +1,20 @@
 require "nn"
 require "rnn"
 require "nngraph"
+require("../header")
+
+
 local memory_model = require("models.memory_model")
 
-local memoryModelWrapper =  torch.class("memoryModelWrapper") 
+local memoryModelWrapper =  torch.class("memoryModelWrapper", "nn.Module") 
 
-function memoryModelWrapper:__init(task, opt)
-   self.task = task
+function memoryModelWrapper:__init(opt)
    self.opt = opt or {}
-   self.model = memory_model.createMyModel(task, self.opt)
+   self.model = memory_model.create(self.opt)
+   self.vectorSize = tonumber(opt.vectorSize)
+   self.memSize = tonumber(opt.memorySize)
+
+   self.mem = torch.Tensor(1, self.memSize, self.vectorSize) 
 end
 
 function memoryModelWrapper:getParameters()
@@ -26,27 +32,31 @@ end
 -- chained param tells whether model shall be used singularly or
 -- in a sequence of clones; clones imply that output of one model shall
 -- be input of the next clone 
-function memoryModelWrapper:forward(X, l)
-   local X_l = X:size(1)
-   local mem = torch.Tensor(self.opt.memorySize - X_l, X:size(2))
-   mem = torch.cat(X, mem, 1)
-  local dummyAddress = torch.Tensor(self.opt.memorySize) -- temporary
-   self.output = self.model:forward({mem, dummyAddress})
+function memoryModelWrapper:updateOutput(X)
+   -- x is just one instance
+   
+   local inp = torch.cat(self.mem:reshape(1,self.memSize * self.vectorSize), X) 
+   self.inp = inp
+   self.output = self.model:forward(inp)
+
+   self.old_mem = self.mem
+   self.mem = self.output[1]
+   self.output = self.output[2]
 
    return self.output
 end
 
-function memoryModelWrapper:backward(X, dOutputs, l)
-   local X_l = X:size(1)
-   local dummy_back = torch.Tensor(self.opt.memorySize) -- temporary
-   local mem = torch.Tensor(self.opt.memorySize - X_l, X:size(2))
-   local temp = torch.cat(X, mem, 1)
-   local dOutputs_mem = torch.Tensor(self.opt.memorySize - X_l, X:size(2))
+function memoryModelWrapper:updateGradInput(X, dOutputs)
+   local inp = torch.cat(self.old_mem:reshape(1, self.memSize * self.vectorSize), X)
+   local dOutputs_mem = torch.zeros(1,self.memSize, self.vectorSize) -- temp, tudor
+   
+   print("derivate mem", tostring(dOutputs_mem:size()))
+   print("derivate iesire", tostring(dOutputs:size()))
+   
+   self.gradInput = self.model:backward(torch.Tensor(1,60), {torch.Tensor(1,5,10), torch.Tensor(1,10)})
+   print("gigi are mere", tostring(self.gradInput:size()))
 
-   dOutputs_mem = torch.cat(dOutputs:reshape(1, dOutputs:size()[1]),
-      dOutputs_mem, 1)
-
-   self.model:backward({mem, dummyAddress},{dOutputs_mem, dummy_back})
+   return self.gradInput 
 end
 
 
