@@ -1,7 +1,11 @@
-local oldPrint = print
-function myPrint(sender, ...)
-   io.write(string.color("[" .. sender .. "] ", "green"))
-   oldPrint(...)
-end
+if not HEADERINITIATED then
 
-print = myPrint
+   local oldPrint = print
+   function myPrint(sender, ...)
+      io.write(string.color("[" .. sender .. "] ", "green"))
+      oldPrint(...)
+   end
+
+   print = myPrint
+   HEADERINITIATED = true
+end

@@ -34,15 +34,15 @@ end
 -- be input of the next clone 
 function memoryModelWrapper:updateOutput(X)
    -- x is just one instance
-   
+    
    local inp = torch.cat(self.mem:reshape(1,self.memSize * self.vectorSize), X) 
+   
    self.inp = inp
    self.output = self.model:forward(inp)
 
    self.old_mem = self.mem
    self.mem = self.output[1]
    self.output = self.output[2]
-
    return self.output
 end
 

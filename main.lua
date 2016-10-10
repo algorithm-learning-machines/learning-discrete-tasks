@@ -67,18 +67,17 @@ cmd:text()
 
 local opts = cmd:parse(arg or {})
 
-
 local tasks = allTasks()
 
-local model = nn.Sequencer(CustomModelWrapper(10, 10))
 
---local model = CustomModelWrapper(10,10)
-local fifi = model:forward(torch.Tensor(20,1,10))
---print("main=================", tostring(fifi:size()))
-model:backward(torch.Tensor(20,1,10), torch.Tensor(20,1,10))
---print("main", tostring(fifi))
---print("main",tostring(model:backward(torch.Tensor(1,5), torch.Tensor(1,5))))
---print("main", model:forward(torch.Tensor(1,10)))
+-- small example to show Sequencer works with rnn LSTM
+local model = nn.Sequencer(nn.LSTM(10,10))
+model:forward(torch.Tensor(10,1,10))
+model:backward(torch.Tensor(10,1,10), torch.Tensor(10,1,10))
+-- folowing model does not work!
+-- local modelOne = CustomModelWrapper(10,10)
+-- modelOne:forward(torch.Tensor(20,1,10))
+-- modelOne:backward(torch.Tensor(20,1,10), torch.Tensor(20,1,10))
 
 os.exit(0)
 
