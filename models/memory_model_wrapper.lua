@@ -17,7 +17,8 @@ function memoryModelWrapper:__init(opt)
    self.model = nn.LSTM(self.memSize * self.vectorSize + self.vectorSize,
       self.memSize * self.vectorSize + self.vectorSize)
    --memory_model.create(self.opt)
-   self.mem = torch.Tensor(1, self.memSize, self.vectorSize) 
+   --self.mem = torch.Tensor(1, self.memSize, self.vectorSize) 
+   self.mem = torch.Tensor(1, self.memSize * self.vectorSize)
 end
 
 function memoryModelWrapper:getParameters()
@@ -37,27 +38,29 @@ end
 -- be input of the next clone 
 function memoryModelWrapper:updateOutput(X)
    -- x is just one instance
-   print("sizes mem", self.memSize * self.vectorSize)
-   print("sizes X", X:size())
+   --print("sizes mem", self.memSize * self.vectorSize)
+   --print("sizes X", X:size())
    local inp = torch.cat(self.mem:reshape(1,self.memSize * self.vectorSize), X) 
    
    self.inp = inp
    self.output = self.model:forward(inp)
 
    self.old_mem = self.mem
+   self.mem = self.output:narrow(2,1,self.memSize * self.vectorSize)
    --self.mem = self.output[1]
    --self.output = self.output[2]
-   return self.output
+   return self.output:narrow(2,self.memSize * self.vectorSize, self.vectorSize)
 end
 
 function memoryModelWrapper:updateGradInput(X, dOutputs)
    --local inp = torch.cat(self.old_mem:reshape(1, self.memSize * self.vectorSize), X)
-   local dOutputs_mem = torch.zeros(1,self.memSize, self.vectorSize) -- temp, tudor
+   local inp = torch.cat(self.mem, X)
+   local dOutputs_mem = torch.zeros(1,self.memSize * self.vectorSize) -- temp, tudor
    
    print("derivate mem", tostring(dOutputs_mem:size()))
    print("derivate iesire", tostring(dOutputs:size()))
-   
-   self.gradInput = self.model:backward(torch.Tensor(1,self.memSize * self.vectorSize + self.vectorSize), torch.Tensor(1,self.memSize * self.vectorSize + self.vectorSize))
+    
+   self.gradInput = self.model:backward(inp, torch.cat(dOutputs_mem, dOutputs))
    print("gigi are mere", tostring(self.gradInput:size()))
 
    return self.gradInput 

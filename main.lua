@@ -76,10 +76,10 @@ model:forward(torch.Tensor(10,1,10))
 model:backward(torch.Tensor(10,1,10), torch.Tensor(10,1,10))
 -- folowing model does not work!
 local modelOne = nn.Sequencer(CustomModelWrapper(10,10))
-modelOne:forward(torch.Tensor(20,1,10))
-modelOne:backward(torch.Tensor(20,1,10), torch.Tensor(20,1,10))
+--modelOne:forward(torch.Tensor(20,1,10))
+--modelOne:backward(torch.Tensor(20,1,10), torch.Tensor(20,1,10))
 
-os.exit(0)
+--os.exit(0)
 
 for k,v in ipairs(tasks) do
    if v == "Copy" then
@@ -110,6 +110,8 @@ for k,v in ipairs(tasks) do
                local err, out
                
                out = seqModel:forward(X)
+               print("inputs", tostring(t.totalOutSize) .." " ..  tostring(t.totalInSize))
+               print("outs", out)
                err = t:evaluateBatch(out, T)
                de = t.criterions[1]:backward(out, T[1])
                -- upper case should collapse to this as well in the end
