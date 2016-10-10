@@ -75,9 +75,9 @@ local model = nn.Sequencer(nn.LSTM(10,10))
 model:forward(torch.Tensor(10,1,10))
 model:backward(torch.Tensor(10,1,10), torch.Tensor(10,1,10))
 -- folowing model does not work!
--- local modelOne = CustomModelWrapper(10,10)
--- modelOne:forward(torch.Tensor(20,1,10))
--- modelOne:backward(torch.Tensor(20,1,10), torch.Tensor(20,1,10))
+local modelOne = nn.Sequencer(CustomModelWrapper(10,10))
+modelOne:forward(torch.Tensor(20,1,10))
+modelOne:backward(torch.Tensor(20,1,10), torch.Tensor(20,1,10))
 
 os.exit(0)
 

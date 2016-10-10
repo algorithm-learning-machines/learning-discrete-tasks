@@ -42,3 +42,6 @@ luac.out
 # Emacs temporary and backup files
 *~
 \#*#
+
+# Swap files
+*.swp
