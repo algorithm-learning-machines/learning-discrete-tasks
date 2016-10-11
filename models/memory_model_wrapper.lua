@@ -8,16 +8,23 @@ local memory_model = require("models.memory_model")
 
 local memoryModelWrapper =  torch.class("memoryModelWrapper", "nn.Module") 
 
+-- simplest gmodule there is
+function createDummyNNGraph(opt)
+  local input = nn.Identity()()  
+  local vectorSize = tonumber(opt.vectorSize)
+  local memSize = tonumber(opt.memorySize)
+  local narrowed = nn.Narrow(2,1, memSize * vectorSize)(input)
+  local output = nn.Linear(memSize * vectorSize, memSize * vectorSize + vectorSize)(narrowed)
+  return nn.gModule({input}, {output})
+end
+
 function memoryModelWrapper:__init(opt)
    self.opt = opt or {}
 
    self.vectorSize = tonumber(opt.vectorSize)
    self.memSize = tonumber(opt.memorySize)
+   self.model = memory_model.create(opt) 
 
-   self.model = nn.LSTM(self.memSize * self.vectorSize + self.vectorSize,
-      self.memSize * self.vectorSize + self.vectorSize)
-   --memory_model.create(self.opt)
-   --self.mem = torch.Tensor(1, self.memSize, self.vectorSize) 
    self.mem = torch.Tensor(1, self.memSize * self.vectorSize)
 end
 
@@ -37,31 +44,21 @@ end
 -- in a sequence of clones; clones imply that output of one model shall
 -- be input of the next clone 
 function memoryModelWrapper:updateOutput(X)
-   -- x is just one instance
-   --print("sizes mem", self.memSize * self.vectorSize)
-   --print("sizes X", X:size())
-   local inp = torch.cat(self.mem:reshape(1,self.memSize * self.vectorSize), X) 
-   
+   local inp = torch.cat(self.mem, X) 
    self.inp = inp
    self.output = self.model:forward(inp)
 
    self.old_mem = self.mem
    self.mem = self.output:narrow(2,1,self.memSize * self.vectorSize)
-   --self.mem = self.output[1]
-   --self.output = self.output[2]
+
    return self.output:narrow(2,self.memSize * self.vectorSize, self.vectorSize)
 end
 
 function memoryModelWrapper:updateGradInput(X, dOutputs)
-   --local inp = torch.cat(self.old_mem:reshape(1, self.memSize * self.vectorSize), X)
    local inp = torch.cat(self.mem, X)
-   local dOutputs_mem = torch.zeros(1,self.memSize * self.vectorSize) -- temp, tudor
-   
-   print("derivate mem", tostring(dOutputs_mem:size()))
-   print("derivate iesire", tostring(dOutputs:size()))
+   local dOutputs_mem = torch.zeros(1,self.memSize * self.vectorSize) -- TODO!!
     
    self.gradInput = self.model:backward(inp, torch.cat(dOutputs_mem, dOutputs))
-   print("gigi are mere", tostring(self.gradInput:size()))
 
    return self.gradInput 
 end

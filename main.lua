@@ -20,7 +20,6 @@ function CustomModel()
    opt.inputSize = 10 
    opt.separateValAddr = true 
    opt.noInput = false -- model receives input besides its memory 
-   --opt.outputLine = true
    opt.noProb = true 
    opt.simplified = false 
    opt.supervised = false 
@@ -38,13 +37,13 @@ end
 
 function CustomModelWrapper(i, o)
    local opt = {} 
-
+   -- internal info
    opt.memOnly = true
    opt.vectorSize = o 
    opt.inputSize = i-- should be the same as vectorSize 
    opt.separateValAddr = true 
    opt.noInput = false -- model receives input besides its memory 
-   opt.outputLine = true
+   opt.outputLine = true -- output a TARGET, besides internal memory
    opt.noProb = true 
    opt.simplified = false 
    opt.supervised = false 
@@ -53,7 +52,8 @@ function CustomModelWrapper(i, o)
    opt.batchSize = 2
    opt.memorySize = 5 -- number of columns practically
    opt.useCuda = false
-   model = memoryModelWrapper(opt)--= require("models.memory_model_wrapper")
+   -- end internal info
+   model = memoryModelWrapper(opt)
 
    -- model to train
    return model 
@@ -69,18 +69,6 @@ local opts = cmd:parse(arg or {})
 
 local tasks = allTasks()
 
-
--- small example to show Sequencer works with rnn LSTM
-local model = nn.Sequencer(nn.LSTM(10,10))
-model:forward(torch.Tensor(10,1,10))
-model:backward(torch.Tensor(10,1,10), torch.Tensor(10,1,10))
--- folowing model does not work!
-local modelOne = nn.Sequencer(CustomModelWrapper(10,10))
---modelOne:forward(torch.Tensor(20,1,10))
---modelOne:backward(torch.Tensor(20,1,10), torch.Tensor(20,1,10))
-
---os.exit(0)
-
 for k,v in ipairs(tasks) do
    if v == "Copy" then
       local t = getTask(v)()
@@ -88,8 +76,8 @@ for k,v in ipairs(tasks) do
       -- model to train
       local seqModel
       if opts.useOurModel then
-         -- desired usage: nn.CustomModel(t.totalInSize, t.totalOutSize)
-         seqModel = nn.Sequencer(CustomModelWrapper(t.totalInSize, t.totalOutSize))
+         seqModel = nn.Sequencer(CustomModelWrapper(t.totalInSize, 
+            t.totalOutSize))
       else
          seqModel = nn.Sequencer(nn.LSTM(t.totalInSize, t.totalOutSize))
       end
@@ -100,8 +88,8 @@ for k,v in ipairs(tasks) do
          parameters, gradParameters = seqModel:getParameters() 
 
          local feval = function(x)
-            if x ~= parameters then parameters:copy(x) end    -- get new parameters
-            gradParameters:zero()                                -- reset gradients
+            if x ~= parameters then parameters:copy(x) end -- get new parameters
+            gradParameters:zero()                             -- reset gradients
             local f = 0
             local train_count = 0
 
@@ -110,15 +98,8 @@ for k,v in ipairs(tasks) do
                local err, out
                
                out = seqModel:forward(X)
-               print("inputs", tostring(t.totalOutSize) .." " ..  tostring(t.totalInSize))
-               print("outs", out)
                err = t:evaluateBatch(out, T)
                de = t.criterions[1]:backward(out, T[1])
-               -- upper case should collapse to this as well in the end
-
-               --print("de", tostring(de:size()))
-               --print("X", tostring(X:size()))
-               --print("sizes", tostring(t.totalInSize).." "..tostring(t.totalOutSize))
 
                seqModel:backward(X, de)
                f = f + err[1].loss

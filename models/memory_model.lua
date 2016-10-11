@@ -4,6 +4,7 @@
 require "nn"
 require "rnn"
 require "nngraph"
+require "header"
 shift_learn = require("models.shift_learn")
 custom_sharpeners = require("models.custom_sharpeners")
 local memoryModel = {}
@@ -20,7 +21,7 @@ function memoryModel.create(opt, addressReader, addressWriter, valueWriter)
       inputSize = tonumber(opt.inputSize)
    end
    local dummyInput = nn.Identity()()
-   local RNN_steps = 5 --TODO add command line param
+   local RNN_steps = 100 -- TODO investigate effect of this param
    local flatMemSize = memSize * vectorSize
 
    -----------------------------------------------------------------------------
@@ -82,7 +83,7 @@ function memoryModel.create(opt, addressReader, addressWriter, valueWriter)
 
    local enc = AR(unpack(params))(linkedNode)
    --local address = nn.MulSoftMax()(enc)
-    local address = nn.Identity()(enc)
+    local address = nn.Identity()(enc) -- TODO add fabric sharpener, mulsoftmax
    -----------------------------------------------------------------------------
 
 
@@ -179,16 +180,23 @@ function memoryModel.create(opt, addressReader, addressWriter, valueWriter)
    in_dict = {}
    out_dict = {}
    in_dict[#in_dict + 1] = allInput 
-   out_dict[#out_dict + 1] = finMem
-
+   if opt.outputLine then
+      local rmem = nn.Reshape(memSize * vectorSize)(finMem)
+      local rv = nn.Reshape(vectorSize)(resizeValueCalc)
+      out_dict[#out_dict + 1] = nn.JoinTable(2)({rmem, rv})
+      print("instantiated join on output","YES!") 
+   else
+      out_dict[#out_dict + 1] = finMem
+   end
+   
    if addressReader then -- add back address to input
       in_dict[#in_dict + 1] = prevWriteAddress
       out_dict[#out_dict + 1] = addrCalc
    end
    
-   if opt.outputLine then
-      out_dict[#out_dict + 1] = valueCalc -- add an output line to the network
-   end
+   --if opt.outputLine then
+      --out_dict[#out_dict + 1] = valueCalc -- add an output line to the network
+   --end
    
    if opt.noProb then
       return nn.gModule(in_dict, out_dict)
