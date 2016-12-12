@@ -39,7 +39,8 @@ function GenericCriterion:__init(task, opts)
          self.criterion:add(nn.ClassNLLCriterion())
          self:print("Class NLL Criterion added")
       elseif v.type == "binary" then
-         self.criterion:add(nn.BCECriterion())
+         self.criterion:add(nn.MSECriterion())
+         --self.criterion:add(nn.BCECriterion())
          self:print("BCE Criterion added")
       else
          assert(false, "Unknown output type")

@@ -54,12 +54,6 @@ function CopyFirst:__generateBatch(Xs, Ts, Fs, L, isTraining)
       assert(T:size(1) == seqLength and self.targetAtEachStep)
       assert(T:size(2) == bs and T:size(3) == vsize)
       assert(F == nil)
-      assert(self.fixedLength or L:nDimension() == 1 and L:size(1) == bs)
-   end
-
-   if not self.fixedLength then
-      seqLength = torch.random(1, seqLength)
-      L:fill(seqLength)
    end
 
    local gen = function()

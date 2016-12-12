@@ -1,18 +1,19 @@
---------------------------------------------------------------------------------
--- After implementing a new task, test it here.
---------------------------------------------------------------------------------
+require 'rnn'
+require("criterions.generic_criterion")
+require("tasks.all_tasks")
+-- [0.9869500000001] [704.70000000008]
+-- TODO: twice as slow as keras version - do smth about this
 
-locales = {'en_US.UTF-8'}
-os.setlocale(locales[1])
+os.setlocale('en_US.UTF-8')
 
 local oldPrint = print
 function myPrint(sender, ...)
-   io.write(string.color("[" .. "DUMB TEST" .. "] ", "red"))
+   io.write(string.color("[" .. "LSTM TEST" .. "] ", "red"))
    io.write(string.color("[" .. sender .. "] ", "green"))
    oldPrint(...)
 end
 
---print = myPrint
+print = myPrint
 
 local function plot(series, tpause)
    local gp = io.popen("gnuplot", 'w')
@@ -35,15 +36,6 @@ local function plot(series, tpause)
 end
 
 
-require 'rnn'
-local createDumbModel = require("models.dumb_model")
-require("criterions.generic_criterion")
-
---------------------------------------------------------------------------------
--- Add tasks here to test them.
-
-require("tasks.all_tasks")
-
 local tasks = allTasks()
 --------------------------------------------------------------------------------
 -- Change options here to test stuff.
@@ -53,12 +45,13 @@ local opts = {}
 opts.batchSize = 3
 opts.positive = 1
 opts.negative = -1
-opts.trainMaxLength = 10
+opts.trainMaxLength = 16
 opts.testMaxLength = 20
-opts.fixedLength = false
-opts.onTheFly = false
-opts.trainSize = 1500
-opts.testSize = 90
+opts.fixedLength = true
+opts.onTheFly = true
+opts.trainSize = 6000
+opts.batchSize = 3000
+opts.testSize = 3000
 opts.verbose = true
 
 -- Task specific options
@@ -66,41 +59,40 @@ opts.vectorSize = 10
 opts.mean = 0.5
 opts.maxCount = 5
 opts.inputsNo = 3
+learnRate = 0.001
+beta1 = 0.9
+beta2 = 0.999
+epsilon = 0.00000001
 
---------------------------------------------------------------------------------
--- Simulate a training process with a dumb model
+local timer = torch.Timer()
+-- For each task, train and test
+for _, taskName in pairs(tasks) do
 
-for _, taskName in pairs(tasks) do                             -- take each task
-
-   print("MAIN", "Testing " .. taskName)
+   print("MAIN", "Training model on " .. taskName)
 
    local Task = getTask(taskName)
    task = Task(opts)
 
-   --local model = createDumbModel(task, opts)              -- create a dumb model
    local inSize = 0
    local outSize = 0
    for k, v in pairs(task:getInputsInfo()) do
       inSize = inSize + v.size
    end
-   local model = nn.Sequential():add(nn.GRU(inSize, 10)) -- hopefully this does the trick
-   --model:add(nn.LSTM(10,10))
-   local concatL = nn.Concat(1)
+   local model = nn.Sequential():add(nn.LSTM(inSize, 16))
+   local concatL = nn.Concat(1) -- concatenate separate output types
    local outputInfo = task:getOutputsInfo()
    for k, v in pairs(outputInfo) do
       outSize = outSize + v.size
-      concatL:add(nn.GRU(10, v.size))
+      concatL:add(nn.GRU(16, v.size))
    end
    model:add(concatL)
    local criterion = GenericCriterion(task, opts)  -- create a generic criterion
 
    task:resetIndex("train")
 
-   local i = 0
-   local err = {}
-   --err['error'] = {}
+   local stats = {loss={}}
 
-   while not task:isEpochOver() or (opts.onTheFly and i < 100) do
+   --while not task:isEpochOver() or (opts.onTheFly and i < 100) do
 
       X, T, F, L = task:updateBatch()
       -- to consider if concatenating input ok approach
@@ -108,10 +100,16 @@ for _, taskName in pairs(tasks) do                             -- take each task
          X[1] = torch.cat(X[1],X[i])
       end
       Xt = X[1]
+      timer:reset()
+      t = 0
+   for epoch=1,10 do
       e = 0
 
       for bt = 1,Xt:size()[2] do -- for every batch
-         for i = 1,L[1] do -- for every elem in sequence
+         model:zeroGradParameters()
+         model:forget()
+         outSeq = {}
+         for i = 1,opts.trainMaxLength do -- for every elem in sequence
             local Y = model:forward(Xt[i][bt])
 
             if task:hasTargetAtEachStep() then
@@ -126,17 +124,7 @@ for _, taskName in pairs(tasks) do                             -- take each task
                   Yt[k] = Y:narrow(1, j, l)
                   j = j + l
                end
-               local loss = criterion:forward(Yt, Tt)
-               local dYt = criterion:backward(Yt, Tt)
-               for i = 2, #dYt do
-                  dYt[1] = torch.cat(dYt[1],dYt[i])
-               end
-               model:zeroGradParameters()
-               model:backward(Xt[i][bt], dYt[1])
-               model:updateParameters(0.01)--learning rate
-               model:maxParamNorm(2)
-               --print(dYt[1]:sum())
-               e = e + dYt[1]:abs():sum()
+               outSeq[i] = {Yt, Tt}
             end
             if task:hasTargetAtTheEnd() and step == length then
                local loss = criterion:forward({Y}, {T[1][1][bt]})
@@ -149,23 +137,40 @@ for _, taskName in pairs(tasks) do                             -- take each task
                e = e + dYt[1]:abs():sum()
             end
          end
+         for i = opts.trainMaxLength,1,-1 do -- reverse order of calls
+               local loss = criterion:forward(outSeq[i][1], outSeq[i][2])
+               local dYt = criterion:backward(outSeq[i][1], outSeq[i][2])
+               for i = 2, #dYt do
+                  dYt[1] = torch.cat(dYt[1],dYt[i])
+               end
+               -- momentum = (momentum or torch.zeros(dYt[1]:size())) * 0.9 + torch.pow(dYt[1],2) * 0.1
+               -- dYt[1]:cdiv(torch.sqrt(momentum))
+               momentum = (momentum or torch.zeros(dYt[1]:size())) * beta1 + dYt[1] * (1 - beta1)
+               speed = (speed or torch.zeros(dYt[1]:size())) * beta2 + torch.pow(dYt[1],2) * (1 - beta2)
+               momentum1 = torch.div(momentum, 1 - math.pow(beta1, t))
+               speed1 = torch.div(speed, 1 - math.pow(beta2, t))
+               momentum1:cdiv(torch.sqrt(speed1) + epsilon)
+               model:backward(Xt[i][bt], momentum1)
+               e = e + loss
+         end
+         model:updateParameters(learnRate)
+         t = t + 1
       end
 
       --task:displayCurrentBatch()
 
-      --sys.sleep(0.02)
-      i = i + 1
-      --err["error"][i] = e
-      print(e)
+      e = e/(Xt:size()[2] * opts.trainMaxLength)
+      stats.loss[epoch] = e
+      print("MAIN","Error after epoch "..epoch..": "..e)
+      collectgarbage()
    end
-   --plot(err)
+   print("MAIN","Finished training in "..timer:time().real..' seconds')
+   plot(stats,0)
 
    ---[[ Testing
    task:resetIndex("test")
-   print("Testing...")
-   accurracy = 0
-   accn = 0
-   while not task:isEpochOver("test") or (opts.onTheFly and i > 0) do
+   stats = {loss = 0, bitAcc = 0, totAcc = 0}
+   --while not task:isEpochOver("test") or (opts.onTheFly and i > 0) do
 
       X, T, F, L = task:updateBatch("test")
       -- to consider if concatenating input ok approach
@@ -175,7 +180,9 @@ for _, taskName in pairs(tasks) do                             -- take each task
       Xt = X[1]
 
       for bt = 1,Xt:size()[2] do -- for every batch
-         for i = 1,L[1] do -- for every elem in sequence
+      	 model:zeroGradParameters()
+      	 model:forget()
+         for i = 1,opts.testMaxLength do -- for every elem in sequence
             local Y = model:forward(Xt[i][bt])
 
             if task:hasTargetAtEachStep() then
@@ -191,15 +198,15 @@ for _, taskName in pairs(tasks) do                             -- take each task
                   j = j + l
                end
                evaluation = task:evaluateBatch(Yt, Tt)[1]
-               accurracy = accurracy + evaluation.correct/evaluation.n
-               accn = accn + 1
+               stats.loss = stats.loss + evaluation.loss
+               stats.bitAcc = stats.bitAcc + evaluation.correct/evaluation.n
+               if evaluation.correct==evaluation.n then stats.totAcc = stats.totAcc + 1 end
             end
             if task:hasTargetAtTheEnd() and step == length then
                local loss = criterion:forward({Y}, {T[1][1][bt]})
                local dYt = criterion:backward({Y}, {T[1][1][bt]})
                evaluation = task:evaluateBatch({Y}, {T[1][1][bt]})[1]
                accurracy = accurracy + evaluation.correct/evaluation.n
-               accn = accn + 1
             end
          end
       end
@@ -208,8 +215,11 @@ for _, taskName in pairs(tasks) do                             -- take each task
 
       --sys.sleep(0.02)
       --i = i - 1
-   end--]]
-   print(accurracy/accn)
+   --end--]]
+   local testn = opts.testSize*opts.testMaxLength
+   print("MAIN", "% of correct bits: "..tostring(stats.bitAcc/testn))
+   print("MAIN", "% of correct answers: "..tostring(stats.totAcc/testn))
+   print("MAIN", "Test loss: "..tostring(stats.loss/testn))
 
    -----------------------------------------------------------------------------
    -- Let's try on cuda now for the test data set

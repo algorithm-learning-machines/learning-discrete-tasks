@@ -50,6 +50,7 @@ function Task:__init(opts)
 
    self.positive = opts.positive or 1
    self.negative = opts.negative or -1
+   self.threshold = opts.threshold or 0.5
 
    if not self.onTheFly then
       self.trainSize = opts.trainSize or 10000
@@ -244,7 +245,8 @@ function Task:__initCriterions()
       elseif v.type == "one-hot" then
          self.criterions[k] = nn.ClassNLLCriterion()
       elseif v.type == "binary" then
-         self.criterions[k] = nn.BCECriterion()
+         --self.criterions[k] = nn.BCECriterion()
+         self.criterions[k] = nn.MSECriterion()
       else
          assert(false, "Unknown output type")
       end
@@ -412,9 +414,8 @@ function Task:evaluateBatch(output, targets, err)
    -----------------------------------------------------------------------------
    -- Functon to transform real values to binary values
 
-   local threshold = self.negative + (self.positive - self.negative) / 2
    local toBinary = function(x)
-      if x >= threshold then return 1 else return 0 end
+      if x >= self.threshold then return 1 else return 0 end
    end
 
    err = err or {}
