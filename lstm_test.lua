@@ -1,8 +1,7 @@
 require 'rnn'
+require 'optim'
 require("criterions.generic_criterion")
 require("tasks.all_tasks")
--- [0.9869500000001] [704.70000000008]
--- TODO: twice as slow as keras version - do smth about this
 
 os.setlocale('en_US.UTF-8')
 
@@ -13,7 +12,7 @@ function myPrint(sender, ...)
    oldPrint(...)
 end
 
-print = myPrint
+--print = myPrint
 
 local function plot(series, tpause)
    local gp = io.popen("gnuplot", 'w')
@@ -35,14 +34,25 @@ local function plot(series, tpause)
    gp:close()
 end
 
+local function fwd(X)
+	model:zeroGradParameters()
+	local Y = model:forward(X)
+	local loss = criterion:forward(Y, T[1])
+	-- print("MAIN","Loss after epoch "..epoch..": "..loss)
+	print(loss)
+	return Y, criterion:backward(Y, T[1])
+end
 
+local optimState = {
+   verbose = false,
+   maxIter = 100
+}
 local tasks = allTasks()
 --------------------------------------------------------------------------------
 -- Change options here to test stuff.
 
 local opts = {}
 
-opts.batchSize = 3
 opts.positive = 1
 opts.negative = -1
 opts.trainMaxLength = 16
@@ -50,7 +60,7 @@ opts.testMaxLength = 20
 opts.fixedLength = true
 opts.onTheFly = true
 opts.trainSize = 6000
-opts.batchSize = 3000
+opts.batchSize = 300
 opts.testSize = 3000
 opts.verbose = true
 
@@ -78,15 +88,17 @@ for _, taskName in pairs(tasks) do
    for k, v in pairs(task:getInputsInfo()) do
       inSize = inSize + v.size
    end
-   local model = nn.Sequential():add(nn.LSTM(inSize, 16))
+   model = nn.Sequential():add(nn.LSTM(inSize, 16))
    local concatL = nn.Concat(1) -- concatenate separate output types
    local outputInfo = task:getOutputsInfo()
    for k, v in pairs(outputInfo) do
       outSize = outSize + v.size
-      concatL:add(nn.GRU(16, v.size))
+      concatL:add(nn.LSTM(16, v.size))
    end
    model:add(concatL)
-   local criterion = GenericCriterion(task, opts)  -- create a generic criterion
+   model = nn.Sequencer(model)
+   -- local criterion = GenericCriterion(task, opts)  -- create a generic criterion
+   criterion = nn.SequencerCriterion(nn.MSECriterion())
 
    task:resetIndex("train")
 
@@ -104,122 +116,126 @@ for _, taskName in pairs(tasks) do
       t = 0
    for epoch=1,10 do
       e = 0
+      optim.adam(fwd, Xt, optimState)
 
-      for bt = 1,Xt:size()[2] do -- for every batch
-         model:zeroGradParameters()
-         model:forget()
-         outSeq = {}
-         for i = 1,opts.trainMaxLength do -- for every elem in sequence
-            local Y = model:forward(Xt[i][bt])
+      --for bt = 1,Xt:size()[2] do -- for every batch
+         -- model:zeroGradParameters()
+         -- model:forget()
+         -- outSeq = {}
+         -- for i = 1,opts.trainMaxLength do -- for every elem in sequence
+         --    local Y = model:forward(Xt[i])
 
-            if task:hasTargetAtEachStep() then
-               Tt = {}
-               Yt = {}
-               for k,v in pairs(T) do
-                  Tt[k] = v[i][bt]
-               end
-               j = 1
-               for k,v in pairs(outputInfo) do
-                  l = v.size
-                  Yt[k] = Y:narrow(1, j, l)
-                  j = j + l
-               end
-               outSeq[i] = {Yt, Tt}
-            end
-            if task:hasTargetAtTheEnd() and step == length then
-               local loss = criterion:forward({Y}, {T[1][1][bt]})
-               local dYt = criterion:backward({Y}, {T[1][1][bt]})
-               model:zeroGradParameters()
-               model:backward(Xt[i][bt], dYt[1])
-               model:updateParameters(0.01)--learning rate
-               model:maxParamNorm(2)
-               --print(dYt[1]:sum())
-               e = e + dYt[1]:abs():sum()
-            end
-         end
-         for i = opts.trainMaxLength,1,-1 do -- reverse order of calls
-               local loss = criterion:forward(outSeq[i][1], outSeq[i][2])
-               local dYt = criterion:backward(outSeq[i][1], outSeq[i][2])
-               for i = 2, #dYt do
-                  dYt[1] = torch.cat(dYt[1],dYt[i])
-               end
-               -- momentum = (momentum or torch.zeros(dYt[1]:size())) * 0.9 + torch.pow(dYt[1],2) * 0.1
-               -- dYt[1]:cdiv(torch.sqrt(momentum))
-               momentum = (momentum or torch.zeros(dYt[1]:size())) * beta1 + dYt[1] * (1 - beta1)
-               speed = (speed or torch.zeros(dYt[1]:size())) * beta2 + torch.pow(dYt[1],2) * (1 - beta2)
-               momentum1 = torch.div(momentum, 1 - math.pow(beta1, t))
-               speed1 = torch.div(speed, 1 - math.pow(beta2, t))
-               momentum1:cdiv(torch.sqrt(speed1) + epsilon)
-               model:backward(Xt[i][bt], momentum1)
-               e = e + loss
-         end
-         model:updateParameters(learnRate)
-         t = t + 1
-      end
+         --    if task:hasTargetAtEachStep() then
+         --       Tt = {}
+         --       Yt = {}
+         --       for k,v in pairs(T) do
+         --          Tt[k] = v[i]
+         --       end
+         --       j = 1
+         --       for k,v in pairs(outputInfo) do
+         --          l = v.size
+         --          Yt[k] = Y:narrow(2, j, l)
+         --          j = j + l
+         --       end
+         --       outSeq[i] = {Yt, Tt}
+         --    end
+         --    -- if task:hasTargetAtTheEnd() and step == length then
+         --    --    local loss = criterion:forward({Y}, {T[1][1][bt]})
+         --    --    local dYt = criterion:backward({Y}, {T[1][1][bt]})
+         --    --    model:zeroGradParameters()
+         --    --    model:backward(Xt[i][bt], dYt[1])
+         --    --    model:updateParameters(0.01)--learning rate
+         --    --    model:maxParamNorm(2)
+         --    --    --print(dYt[1]:sum())
+         --    --    e = e + dYt[1]:abs():sum()
+         --    -- end
+         -- end
+         -- for i = opts.trainMaxLength,1,-1 do -- reverse order of calls
+         --       local loss = criterion:forward(outSeq[i][1], outSeq[i][2])
+         --       local dYt = criterion:backward(outSeq[i][1], outSeq[i][2])
+         --       for i = 2, #dYt do
+         --          dYt[1] = torch.cat(dYt[1],dYt[i])
+         --       end
+         --       dYt[1]:div(opts.trainMaxLength)
+         --       -- print(dYt[1])
+         --       -- momentum = (momentum or torch.zeros(dYt[1]:size())) * 0.9 + torch.pow(dYt[1],2) * 0.1
+         --       -- dYt[1]:cdiv(torch.sqrt(momentum))
+         --       -- momentum = (momentum or torch.zeros(dYt[1]:size())) * beta1 + dYt[1] * (1 - beta1)
+         --       -- speed = (speed or torch.zeros(dYt[1]:size())) * beta2 + torch.pow(dYt[1],2) * (1 - beta2)
+         --       -- momentum1 = torch.div(momentum, 1 - math.pow(beta1, t))
+         --       -- speed1 = torch.div(speed, 1 - math.pow(beta2, t))
+         --       -- momentum1:cdiv(torch.sqrt(speed1) + epsilon)
+         --       -- model:backward(Xt[i], momentum1)
+         --       model:backward(Xt[i], dYt[1])
+         --       e = e + loss
+         -- end
+         -- model:updateParameters(learnRate)
+         -- t = t + 1
+      --end
 
       --task:displayCurrentBatch()
 
-      e = e/(Xt:size()[2] * opts.trainMaxLength)
-      stats.loss[epoch] = e
-      print("MAIN","Error after epoch "..epoch..": "..e)
+      -- e = e/(Xt:size()[2] * opts.trainMaxLength)
+      -- stats.loss[epoch] = e
+      -- print("MAIN","Error after epoch "..epoch..": "..e)
       collectgarbage()
    end
    print("MAIN","Finished training in "..timer:time().real..' seconds')
-   plot(stats,0)
+   -- plot(stats,0)
 
    ---[[ Testing
-   task:resetIndex("test")
-   stats = {loss = 0, bitAcc = 0, totAcc = 0}
-   --while not task:isEpochOver("test") or (opts.onTheFly and i > 0) do
+   -- task:resetIndex("test")
+   -- stats = {loss = 0, bitAcc = 0, totAcc = 0}
+   -- --while not task:isEpochOver("test") or (opts.onTheFly and i > 0) do
 
-      X, T, F, L = task:updateBatch("test")
-      -- to consider if concatenating input ok approach
-      for i = 2, #X do
-         X[1] = torch.cat(X[1],X[i])
-      end
-      Xt = X[1]
+   --    X, T, F, L = task:updateBatch("test")
+   --    -- to consider if concatenating input ok approach
+   --    for i = 2, #X do
+   --       X[1] = torch.cat(X[1],X[i])
+   --    end
+   --    Xt = X[1]
 
-      for bt = 1,Xt:size()[2] do -- for every batch
-      	 model:zeroGradParameters()
-      	 model:forget()
-         for i = 1,opts.testMaxLength do -- for every elem in sequence
-            local Y = model:forward(Xt[i][bt])
+   --    for bt = 1,Xt:size()[2] do -- for every batch
+   --    	 model:zeroGradParameters()
+   --    	 model:forget()
+   --       for i = 1,opts.testMaxLength do -- for every elem in sequence
+   --          local Y = model:forward(Xt[i][bt])
 
-            if task:hasTargetAtEachStep() then
-               Tt = {}
-               Yt = {}
-               for k,v in pairs(T) do
-                  Tt[k] = v[i][bt]
-               end
-               j = 1
-               for k,v in pairs(outputInfo) do
-                  l = v.size
-                  Yt[k] = Y:narrow(1, j, l)
-                  j = j + l
-               end
-               evaluation = task:evaluateBatch(Yt, Tt)[1]
-               stats.loss = stats.loss + evaluation.loss
-               stats.bitAcc = stats.bitAcc + evaluation.correct/evaluation.n
-               if evaluation.correct==evaluation.n then stats.totAcc = stats.totAcc + 1 end
-            end
-            if task:hasTargetAtTheEnd() and step == length then
-               local loss = criterion:forward({Y}, {T[1][1][bt]})
-               local dYt = criterion:backward({Y}, {T[1][1][bt]})
-               evaluation = task:evaluateBatch({Y}, {T[1][1][bt]})[1]
-               accurracy = accurracy + evaluation.correct/evaluation.n
-            end
-         end
-      end
+   --          if task:hasTargetAtEachStep() then
+   --             Tt = {}
+   --             Yt = {}
+   --             for k,v in pairs(T) do
+   --                Tt[k] = v[i][bt]
+   --             end
+   --             j = 1
+   --             for k,v in pairs(outputInfo) do
+   --                l = v.size
+   --                Yt[k] = Y:narrow(1, j, l)
+   --                j = j + l
+   --             end
+   --             evaluation = task:evaluateBatch(Yt, Tt)[1]
+   --             stats.loss = stats.loss + evaluation.loss
+   --             stats.bitAcc = stats.bitAcc + evaluation.correct/evaluation.n
+   --             if evaluation.correct==evaluation.n then stats.totAcc = stats.totAcc + 1 end
+   --          end
+   --          if task:hasTargetAtTheEnd() and step == length then
+   --             local loss = criterion:forward({Y}, {T[1][1][bt]})
+   --             local dYt = criterion:backward({Y}, {T[1][1][bt]})
+   --             evaluation = task:evaluateBatch({Y}, {T[1][1][bt]})[1]
+   --             accurracy = accurracy + evaluation.correct/evaluation.n
+   --          end
+   --       end
+   --    end
 
-      --task:displayCurrentBatch()
+   --    --task:displayCurrentBatch()
 
-      --sys.sleep(0.02)
-      --i = i - 1
-   --end--]]
-   local testn = opts.testSize*opts.testMaxLength
-   print("MAIN", "% of correct bits: "..tostring(stats.bitAcc/testn))
-   print("MAIN", "% of correct answers: "..tostring(stats.totAcc/testn))
-   print("MAIN", "Test loss: "..tostring(stats.loss/testn))
+   --    --sys.sleep(0.02)
+   --    --i = i - 1
+   -- --end--]]
+   -- local testn = opts.testSize*opts.testMaxLength
+   -- print("MAIN", "% of correct bits: "..tostring(stats.bitAcc/testn))
+   -- print("MAIN", "% of correct answers: "..tostring(stats.totAcc/testn))
+   -- print("MAIN", "Test loss: "..tostring(stats.loss/testn))
 
    -----------------------------------------------------------------------------
    -- Let's try on cuda now for the test data set
