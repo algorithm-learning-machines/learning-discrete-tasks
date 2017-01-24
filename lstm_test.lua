@@ -34,19 +34,70 @@ local function plot(series, tpause)
    gp:close()
 end
 
-local function fwd(X)
+local function trainPass(X, T, epoch, stats)
 	model:zeroGradParameters()
 	local Y = model:forward(X)
 	local loss = criterion:forward(Y, T[1])
-	-- print("MAIN","Loss after epoch "..epoch..": "..loss)
-	print(loss)
-	return Y, criterion:backward(Y, T[1])
+	local gradOut = criterion:backward(Y, T[1])
+	gradOut = adamLR(gradOut, {})
+	model:backward(X, gradOut)
+	model:updateParameters(1) -- lr already incorporated into gradient
+	eval = task:evaluateBatch(Y, T[1])[1]
+	print("MAIN","Loss after epoch "..epoch..": "..eval.loss)
+    stats['loss'][epoch] = eval.loss
+    stats['acc'][epoch] = eval.correct / eval.n
 end
 
-local optimState = {
-   verbose = false,
-   maxIter = 100
-}
+local function testPass(X, T)
+	model:zeroGradParameters()
+	local Y = model:forward(X)
+	eval = task:evaluateBatch(Y, T[1])[1]
+	return eval.loss, eval.correct/eval.n
+end
+
+function adamLR(gradient, state)
+   local state = state or {}
+   local lr = state.learningRate or 0.001
+   local lrd = state.learningRateDecay or 0
+
+   local beta1 = state.beta1 or 0.9
+   local beta2 = state.beta2 or 0.999
+   local epsilon = state.epsilon or 1e-8
+   local wd = state.weightDecay or 0
+
+   -- (2) weight decay
+   -- if wd ~= 0 then
+   --    gradient:add(wd, x)
+   -- end
+
+   -- Initialization
+   state.t = state.t or 0
+   -- Exponential moving average of gradient values
+   state.m = state.m or torch.zeros(gradient:size())
+   -- Exponential moving average of squared gradient values
+   state.v = state.v or torch.zeros(gradient:size())
+   -- A tmp tensor to hold the sqrt(v) + epsilon
+   state.denom = state.denom or torch.zeros(gradient:size())
+
+   -- (3) learning rate decay (annealing)
+   local clr = lr / (1 + state.t*lrd)
+
+   state.t = state.t + 1
+
+   -- Decay the first and second moment running average coefficient
+   state.m:mul(beta1):add(1-beta1, gradient)
+   state.v:mul(beta2):addcmul(1-beta2, gradient, gradient)
+
+   state.denom:copy(state.v):sqrt():add(epsilon)
+
+   local biasCorrection1 = 1 - beta1^state.t
+   local biasCorrection2 = 1 - beta2^state.t
+   local stepSize = clr * math.sqrt(biasCorrection2)/biasCorrection1
+   gradient = torch.mul(torch.cdiv(state.m, state.denom), stepSize)
+
+   return gradient
+end
+
 local tasks = allTasks()
 --------------------------------------------------------------------------------
 -- Change options here to test stuff.
@@ -69,10 +120,6 @@ opts.vectorSize = 10
 opts.mean = 0.5
 opts.maxCount = 5
 opts.inputsNo = 3
-learnRate = 0.001
-beta1 = 0.9
-beta2 = 0.999
-epsilon = 0.00000001
 
 local timer = torch.Timer()
 -- For each task, train and test
@@ -102,98 +149,40 @@ for _, taskName in pairs(tasks) do
 
    task:resetIndex("train")
 
-   local stats = {loss={}}
+   local stats = {loss={},acc={},valid_loss={},valid_acc={}}
 
    --while not task:isEpochOver() or (opts.onTheFly and i < 100) do
 
       X, T, F, L = task:updateBatch()
+      valX, valT, F, L = task:updateBatch()
+      -- to consider if concatenating input ok approach
+      for i = 2, #X do
+         X[1] = torch.cat(X[1],X[i])
+         valX[1] = torch.cat(valX[1],valX[i])
+      end
+      timer:reset()
+   for epoch=1,20 do
+      trainPass(X[1], T, epoch, stats)
+      loss, bitsCorr = testPass(valX[1], valT)
+      stats['valid_loss'][epoch] = loss
+      stats['valid_acc'][epoch] = bitsCorr
+      collectgarbage()
+   end
+   print("MAIN","Finished training in "..timer:time().real..' seconds')
+   plot(stats,10)
+
+   ---[[ Testing
+   task:resetIndex("test")
+   -- --while not task:isEpochOver("test") or (opts.onTheFly and i > 0) do
+
+      X, T, F, L = task:updateBatch("test")
       -- to consider if concatenating input ok approach
       for i = 2, #X do
          X[1] = torch.cat(X[1],X[i])
       end
-      Xt = X[1]
-      timer:reset()
-      t = 0
-   for epoch=1,10 do
-      e = 0
-      optim.adam(fwd, Xt, optimState)
-
-      --for bt = 1,Xt:size()[2] do -- for every batch
-         -- model:zeroGradParameters()
-         -- model:forget()
-         -- outSeq = {}
-         -- for i = 1,opts.trainMaxLength do -- for every elem in sequence
-         --    local Y = model:forward(Xt[i])
-
-         --    if task:hasTargetAtEachStep() then
-         --       Tt = {}
-         --       Yt = {}
-         --       for k,v in pairs(T) do
-         --          Tt[k] = v[i]
-         --       end
-         --       j = 1
-         --       for k,v in pairs(outputInfo) do
-         --          l = v.size
-         --          Yt[k] = Y:narrow(2, j, l)
-         --          j = j + l
-         --       end
-         --       outSeq[i] = {Yt, Tt}
-         --    end
-         --    -- if task:hasTargetAtTheEnd() and step == length then
-         --    --    local loss = criterion:forward({Y}, {T[1][1][bt]})
-         --    --    local dYt = criterion:backward({Y}, {T[1][1][bt]})
-         --    --    model:zeroGradParameters()
-         --    --    model:backward(Xt[i][bt], dYt[1])
-         --    --    model:updateParameters(0.01)--learning rate
-         --    --    model:maxParamNorm(2)
-         --    --    --print(dYt[1]:sum())
-         --    --    e = e + dYt[1]:abs():sum()
-         --    -- end
-         -- end
-         -- for i = opts.trainMaxLength,1,-1 do -- reverse order of calls
-         --       local loss = criterion:forward(outSeq[i][1], outSeq[i][2])
-         --       local dYt = criterion:backward(outSeq[i][1], outSeq[i][2])
-         --       for i = 2, #dYt do
-         --          dYt[1] = torch.cat(dYt[1],dYt[i])
-         --       end
-         --       dYt[1]:div(opts.trainMaxLength)
-         --       -- print(dYt[1])
-         --       -- momentum = (momentum or torch.zeros(dYt[1]:size())) * 0.9 + torch.pow(dYt[1],2) * 0.1
-         --       -- dYt[1]:cdiv(torch.sqrt(momentum))
-         --       -- momentum = (momentum or torch.zeros(dYt[1]:size())) * beta1 + dYt[1] * (1 - beta1)
-         --       -- speed = (speed or torch.zeros(dYt[1]:size())) * beta2 + torch.pow(dYt[1],2) * (1 - beta2)
-         --       -- momentum1 = torch.div(momentum, 1 - math.pow(beta1, t))
-         --       -- speed1 = torch.div(speed, 1 - math.pow(beta2, t))
-         --       -- momentum1:cdiv(torch.sqrt(speed1) + epsilon)
-         --       -- model:backward(Xt[i], momentum1)
-         --       model:backward(Xt[i], dYt[1])
-         --       e = e + loss
-         -- end
-         -- model:updateParameters(learnRate)
-         -- t = t + 1
-      --end
-
-      --task:displayCurrentBatch()
-
-      -- e = e/(Xt:size()[2] * opts.trainMaxLength)
-      -- stats.loss[epoch] = e
-      -- print("MAIN","Error after epoch "..epoch..": "..e)
-      collectgarbage()
-   end
-   print("MAIN","Finished training in "..timer:time().real..' seconds')
-   -- plot(stats,0)
-
-   ---[[ Testing
-   -- task:resetIndex("test")
-   -- stats = {loss = 0, bitAcc = 0, totAcc = 0}
-   -- --while not task:isEpochOver("test") or (opts.onTheFly and i > 0) do
-
-   --    X, T, F, L = task:updateBatch("test")
-   --    -- to consider if concatenating input ok approach
-   --    for i = 2, #X do
-   --       X[1] = torch.cat(X[1],X[i])
-   --    end
-   --    Xt = X[1]
+      loss, bitsCorr = testPass(X[1], T)
+	  print("MAIN","Test loss: "..loss)
+	  print("MAIN","Test bit accuracy: "..bitsCorr)
 
    --    for bt = 1,Xt:size()[2] do -- for every batch
    --    	 model:zeroGradParameters()

@@ -456,14 +456,12 @@ function Task:evaluateBatch(output, targets, err)
          end
 
       elseif v.type == "binary" then
+         errInfo.loss = (errInfo.loss or 0) + self.criterions[k]:forward(output[k], targets[k])
 
          local O = output[k]:clone():apply(toBinary)
          local T = targets[k]:clone():apply(toBinary)
-
          errInfo.correct = (errInfo.correct or 0) + O:eq(T):sum()
          errInfo.n = (errInfo.n or 0) + O:nElement()
-         errInfo.loss = (errInfo.loss or 0) + self.criterions[k]:forward(O, T)
-
       else
          assert(false, "Unknown output type")
       end
